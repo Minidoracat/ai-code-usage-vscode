@@ -17,6 +17,26 @@ test("valid range update message passes", () => {
   assert.equal("error" in result, false);
 });
 
+test("valid calendar quick range update message passes", () => {
+  const result = validateWebviewRequest({
+    requestId: "range",
+    type: "setRange",
+    version: webviewProtocolVersion,
+    payload: { kind: "lastWeek" },
+  });
+  assert.equal("error" in result, false);
+});
+
+test("legacy rolling range update message fails", () => {
+  const result = validateWebviewRequest({
+    requestId: "range",
+    type: "setRange",
+    version: webviewProtocolVersion,
+    payload: { kind: "last7Days" },
+  });
+  assert.equal("error" in result, true);
+});
+
 test("valid provider filter message passes", () => {
   const result = validateWebviewRequest({
     requestId: "provider",

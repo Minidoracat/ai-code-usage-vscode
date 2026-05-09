@@ -206,7 +206,10 @@ h2 {
 }
 
 .range-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(88px, 1fr));
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
 }
 
 .custom-row,
@@ -966,7 +969,7 @@ td.numeric {
 
 @media (max-width: 460px) {
   .range-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(76px, 1fr));
   }
 
   .custom-row,

@@ -10,7 +10,7 @@ VS Code でローカルの Claude Code と Codex の使用量を追跡します�
 
 - ローカルの Claude Code と Codex の使用量ソースを検出
 - Claude、Codex、または両方で provider filter
-- 今日、7 日、30 日、今月、カスタム日付範囲に対応
+- 今日、昨日、今週、先週、今月、先月、カスタム日付範囲に対応。週範囲は月曜始まりで、すべての境界は選択した time zone で区切ります
 - タイムゾーン選択：system time zone、UTC、またはカスタム IANA time zone
 - モデル別・セッション別の input tokens、output tokens、cache creation、cache reads、message counts
 - 対応モデルの API 相当 USD コスト見積もり

@@ -64,6 +64,13 @@ export function startOfMonthDateKey(value: string): string {
   return dateKey(parts.year, parts.month, 1);
 }
 
+export function startOfWeekDateKey(value: string): string {
+  const parts = parseDateKey(value);
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  return addDateKeyDays(value, -daysSinceMonday);
+}
+
 export function normalizeDateKey(value: string | undefined, timeZone: string): string | undefined {
   if (!value) {
     return undefined;

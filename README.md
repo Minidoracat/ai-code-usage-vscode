@@ -10,7 +10,7 @@ Languages: [English](README.md) | [繁體中文](docs/readme/README.zh-TW.md) | 
 
 - Local Claude Code and Codex usage discovery
 - Provider filters for Claude, Codex, or both
-- Quick ranges for today, 7 days, 30 days, this month, and custom dates
+- Calendar quick ranges for today, yesterday, this week, last week, this month, last month, and custom dates; week ranges start on Monday and all boundaries use the selected time zone
 - Time zone selection: system time zone, UTC, or custom IANA time zone
 - Model and session breakdowns with input tokens, output tokens, cache creation, cache reads, and message counts
 - API-equivalent USD estimates for supported models

@@ -77,7 +77,7 @@ export interface UsageAdapter {
   importUsage(options?: AdapterOptions): Promise<AdapterImportResult>;
 }
 
-export type TimeRangeKind = "today" | "last7Days" | "last30Days" | "thisMonth" | "custom";
+export type TimeRangeKind = "today" | "yesterday" | "thisWeek" | "lastWeek" | "thisMonth" | "lastMonth" | "custom";
 
 export type TimeZoneMode = "system" | "utc" | "custom";
 

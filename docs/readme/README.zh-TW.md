@@ -10,7 +10,7 @@
 
 - 偵測本機 Claude Code 與 Codex 使用量來源
 - 可篩選 Claude、Codex 或兩者
-- 支援今天、7 天、30 天、本月與自訂日期範圍
+- 支援今天、昨天、本週、上週、本月、上月與自訂日期範圍；週範圍從週一開始，所有邊界依所選時區切分
 - 支援時區選擇：系統時區、UTC 或自訂 IANA time zone
 - 依模型與工作階段顯示 input tokens、output tokens、cache creation、cache reads 與 message counts
 - 針對支援模型提供 API 等效 USD 成本估算

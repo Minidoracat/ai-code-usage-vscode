@@ -1,4 +1,5 @@
 import type { TimeRangeKind, TimeZoneMode, TimeZoneState, UsageProvider, UsageProviderFilter, UsageSummary } from "../domain/types";
+import { isTimeRangeKind } from "../domain/timeRange";
 import { isValidAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { isTimeZoneMode, isValidTimeZone } from "../services/TimeZoneService";
 
@@ -122,7 +123,7 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setRange" && isObject(value["payload"])) {
     const kind = value["payload"]["kind"];
-    if (kind === "today" || kind === "last7Days" || kind === "last30Days" || kind === "thisMonth" || kind === "custom") {
+    if (isTimeRangeKind(kind)) {
       return {
         requestId: value["requestId"],
         type: "setRange",

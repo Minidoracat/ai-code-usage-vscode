@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Local Claude Code and Codex usage dashboard for VS Code.
 - Provider, model, daily trend, and session summaries.
 - API-equivalent USD cost estimates for supported models.
-- Date range shortcuts, custom date ranges, and selectable time zones.
+- Time-zone-aware calendar shortcuts, custom date ranges, and selectable time zones.
 - Dashboard language selection for English, Traditional Chinese, Simplified Chinese, Japanese, and Korean.
 - Auto refresh controls and status bar summary.
 - Local source detection for Claude Code and Codex usage paths.

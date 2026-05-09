@@ -6,7 +6,7 @@ import { TimeRangeService } from "../src/services/TimeRangeService";
 import { resolveTimeZone } from "../src/services/TimeZoneService";
 
 test("aggregator builds totals, splits, trend, and session rollups", () => {
-  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("last7Days");
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
   const summary = new UsageAggregator().aggregate([importResult(records())], range);
 
   assert.equal(summary.totals.records, 3);
@@ -47,12 +47,48 @@ test("quick ranges resolve by selected time zone", () => {
   assert.equal(range.timeZone.resolvedTimeZone, "Asia/Taipei");
 });
 
-test("utc ranges stay on utc calendar days", () => {
-  const range = new TimeRangeService(() => new Date("2026-04-30T17:00:00.000Z"), resolveTimeZone("utc")).resolve("today");
+test("calendar quick ranges resolve from selected time zone date boundaries", () => {
+  const timeZone = resolveTimeZone("custom", "Asia/Taipei");
+  const service = new TimeRangeService(() => new Date("2026-05-10T02:00:00.000Z"), timeZone);
 
-  assert.equal(range.startDate, "2026-04-30");
-  assert.equal(range.start, "2026-04-30T00:00:00.000Z");
-  assert.equal(range.end, "2026-04-30T23:59:59.999Z");
+  const yesterday = service.resolve("yesterday");
+  assert.equal(yesterday.startDate, "2026-05-09");
+  assert.equal(yesterday.endDate, "2026-05-09");
+  assert.equal(yesterday.start, "2026-05-08T16:00:00.000Z");
+  assert.equal(yesterday.end, "2026-05-09T15:59:59.999Z");
+
+  const thisWeek = service.resolve("thisWeek");
+  assert.equal(thisWeek.startDate, "2026-05-04");
+  assert.equal(thisWeek.endDate, "2026-05-10");
+  assert.equal(thisWeek.start, "2026-05-03T16:00:00.000Z");
+  assert.equal(thisWeek.end, "2026-05-10T15:59:59.999Z");
+
+  const lastWeek = service.resolve("lastWeek");
+  assert.equal(lastWeek.startDate, "2026-04-27");
+  assert.equal(lastWeek.endDate, "2026-05-03");
+  assert.equal(lastWeek.start, "2026-04-26T16:00:00.000Z");
+  assert.equal(lastWeek.end, "2026-05-03T15:59:59.999Z");
+
+  const lastMonth = service.resolve("lastMonth");
+  assert.equal(lastMonth.startDate, "2026-04-01");
+  assert.equal(lastMonth.endDate, "2026-04-30");
+  assert.equal(lastMonth.start, "2026-03-31T16:00:00.000Z");
+  assert.equal(lastMonth.end, "2026-04-30T15:59:59.999Z");
+});
+
+test("utc ranges stay on utc calendar days", () => {
+  const service = new TimeRangeService(() => new Date("2026-05-10T02:00:00.000Z"), resolveTimeZone("utc"));
+  const range = service.resolve("today");
+
+  assert.equal(range.startDate, "2026-05-10");
+  assert.equal(range.start, "2026-05-10T00:00:00.000Z");
+  assert.equal(range.end, "2026-05-10T23:59:59.999Z");
+
+  const thisWeek = service.resolve("thisWeek");
+  assert.equal(thisWeek.startDate, "2026-05-04");
+  assert.equal(thisWeek.endDate, "2026-05-10");
+  assert.equal(thisWeek.start, "2026-05-04T00:00:00.000Z");
+  assert.equal(thisWeek.end, "2026-05-10T23:59:59.999Z");
 });
 
 test("trend buckets use selected time zone date keys", () => {
@@ -91,7 +127,7 @@ test("empty input returns zero totals", () => {
 });
 
 test("provider filter limits totals to selected provider", () => {
-  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("last7Days");
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
   const summary = new UsageAggregator().aggregate([importResult(records())], range, "claude");
 
   assert.equal(summary.providerFilter, "claude");
@@ -108,7 +144,7 @@ test("mixed cost currencies do not produce misleading total cost", () => {
     parserVersion: "test",
     readAt: "2026-04-30T12:00:00.000Z",
   };
-  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("last7Days");
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
   const summary = new UsageAggregator().aggregate([
     importResult([
       {
@@ -146,7 +182,7 @@ test("partial cost coverage is marked on cost totals", () => {
     parserVersion: "test",
     readAt: "2026-04-30T12:00:00.000Z",
   };
-  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("last7Days");
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
   const summary = new UsageAggregator().aggregate([
     importResult([
       {

@@ -11,6 +11,7 @@ import type {
   UsageProviderFilter,
   UsageSummary,
 } from "../src/domain/types";
+import { timeRangeKinds } from "../src/domain/timeRange";
 import {
   webviewProtocolVersion,
   type DashboardLoadingPhase,
@@ -25,7 +26,7 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscodeApi = acquireVsCodeApi();
-const ranges: TimeRangeKind[] = ["today", "last7Days", "last30Days", "thisMonth", "custom"];
+const ranges: readonly TimeRangeKind[] = timeRangeKinds;
 const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex"];
 const localePreferences: DashboardLocalePreference[] = ["auto", "en", "zh-TW", "zh-CN", "ja", "ko"];
 const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
@@ -231,7 +232,7 @@ function Dashboard() {
         </div>
       ) : null}
 
-      <section class="control-panel" aria-label="Time range">
+      <section class="control-panel" aria-label={translate("filter.timeRange")}>
         <div class="range-row">
           {ranges.map((kind) => (
             <button

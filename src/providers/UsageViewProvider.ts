@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
 import { tokenTotal } from "../domain/math";
+import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import type {
   AdapterImportResult,
   ImportIssue,
@@ -36,7 +37,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private panel?: vscode.WebviewPanel;
   private readonly statusBarItem: vscode.StatusBarItem;
-  private rangeKind: TimeRangeKind = "last7Days";
+  private rangeKind: TimeRangeKind = defaultTimeRangeKind;
   private rangeInitialized = false;
   private providerFilter: UsageProviderFilter = "all";
   private invalidSourcePromptShown = false;
@@ -210,7 +211,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private async loadSummary(options: { allowSourcePrompt?: boolean; forceImport?: boolean } = {}, run = this.refreshRun): Promise<UsageSummary> {
     const config = vscode.workspace.getConfiguration("aiCodingUsage");
     if (!this.rangeInitialized) {
-      this.rangeKind = config.get<TimeRangeKind>("defaultRange", this.rangeKind);
+      this.rangeKind = normalizeTimeRangeKind(config.get<string>("defaultRange"), this.rangeKind);
       this.rangeInitialized = true;
     }
     if (options.allowSourcePrompt) {

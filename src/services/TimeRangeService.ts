@@ -4,6 +4,7 @@ import {
   normalizeDateKey,
   resolveTimeZone,
   startOfMonthDateKey,
+  startOfWeekDateKey,
   zonedDateKey,
   zonedDateTimeToUtcIso,
 } from "./TimeZoneService";
@@ -32,15 +33,31 @@ export class TimeRangeService {
       return this.fromDateKeys(kind, today, today);
     }
 
-    if (kind === "last7Days") {
-      return this.fromDateKeys(kind, addDateKeyDays(today, -6), today);
+    if (kind === "yesterday") {
+      const yesterday = addDateKeyDays(today, -1);
+      return this.fromDateKeys(kind, yesterday, yesterday);
     }
 
-    if (kind === "last30Days") {
-      return this.fromDateKeys(kind, addDateKeyDays(today, -29), today);
+    if (kind === "thisWeek") {
+      return this.fromDateKeys(kind, startOfWeekDateKey(today), today);
     }
 
-    return this.fromDateKeys(kind, startOfMonthDateKey(today), today);
+    if (kind === "lastWeek") {
+      const endDate = addDateKeyDays(startOfWeekDateKey(today), -1);
+      return this.fromDateKeys(kind, startOfWeekDateKey(endDate), endDate);
+    }
+
+    if (kind === "thisMonth") {
+      return this.fromDateKeys(kind, startOfMonthDateKey(today), today);
+    }
+
+    if (kind === "lastMonth") {
+      const endDate = addDateKeyDays(startOfMonthDateKey(today), -1);
+      return this.fromDateKeys(kind, startOfMonthDateKey(endDate), endDate);
+    }
+
+    const exhaustiveKind: never = kind;
+    throw new Error(`Unsupported time range kind: ${exhaustiveKind}`);
   }
 
   private fromDateKeys(kind: TimeRangeKind, startDate: string, endDate: string): TimeRange {
