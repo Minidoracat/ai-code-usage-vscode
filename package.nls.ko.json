@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "AI Coding Usage",
+  "extension.description": "VS Code에서 Claude Code와 Codex 사용량을 추적합니다.",
+  "command.refresh.title": "사용량 새로 고침",
+  "command.openDashboard.title": "AI Coding Usage 열기",
+  "command.openSettings.title": "AI Coding Usage 설정 열기",
+  "command.detectLocalSources.title": "로컬 AI usage sources 감지",
+  "viewContainer.title": "AI 사용량",
+  "view.dashboard.name": "사용량 대시보드",
+  "configuration.title": "AI Coding Usage",
+  "configuration.claudeUsagePath.description": "Claude Code usage data의 로컬 path입니다. 비워 두면 감지된 로컬 source를 자동 적용합니다.",
+  "configuration.codexUsagePath.description": "Codex usage data의 로컬 path입니다. 비워 두면 감지된 로컬 source를 자동 적용합니다.",
+  "configuration.defaultRange.description": "Dashboard 기본 시간 범위입니다.",
+  "configuration.locale.description": "Dashboard 언어입니다. auto는 VS Code 표시 언어를 따릅니다.",
+  "configuration.timeZoneMode.description": "Dashboard 시간대 모드입니다. system은 이 기기, utc는 UTC, custom은 IANA time zone을 사용합니다.",
+  "configuration.customTimeZone.description": "Dashboard 사용자 지정 IANA time zone입니다. 예: Asia/Taipei. timeZoneMode가 custom일 때만 사용됩니다.",
+  "configuration.autoRefreshIntervalSeconds.description": "자동 새로 고침 간격(초)입니다. 0으로 설정하면 자동 새로 고침이 중지됩니다. 1부터 29까지는 30초로 처리됩니다. 권장 기본값은 300초입니다.",
+  "configuration.autoDetectLocalSources.description": "로컬 Claude Code와 Codex usage paths를 자동 감지하고 적용합니다."
+}

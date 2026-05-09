@@ -1,0 +1,24 @@
+[
+  {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "sessionId": "codex-a",
+    "startedAt": "2026-04-30T10:00:00.000Z",
+    "endedAt": "2026-04-30T10:30:00.000Z",
+    "tokens": {
+      "input": 1000,
+      "cachedInput": 500,
+      "output": 300
+    }
+  },
+  {
+    "provider": "codex",
+    "model": "gpt-5.4-mini",
+    "sessionId": "codex-b",
+    "startedAt": "2026-04-28T10:00:00.000Z",
+    "tokens": {
+      "input": 750,
+      "output": 120
+    }
+  }
+]

@@ -1,0 +1,61 @@
+{
+  "checkedAt": "2026-05-01T00:00:00.000Z",
+  "sourceUrls": [
+    "https://developers.openai.com/api/docs/pricing",
+    "https://platform.claude.com/docs/en/docs/about-claude/pricing"
+  ],
+  "rules": [
+    {
+      "provider": "codex",
+      "model": "gpt-5.5",
+      "modelAliases": [
+        "GPT-5.5"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-05-01T00:00:00.000Z",
+      "rates": {
+        "input": 5,
+        "cachedInput": 0.5,
+        "output": 30
+      }
+    },
+    {
+      "provider": "codex",
+      "model": "gpt-5.4-mini",
+      "modelAliases": [
+        "GPT-5.4 mini",
+        "gpt-5.4-mini"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-05-01T00:00:00.000Z",
+      "rates": {
+        "input": 0.75,
+        "cachedInput": 0.075,
+        "output": 4.5
+      }
+    },
+    {
+      "provider": "claude",
+      "model": "claude-sonnet-4-6",
+      "modelAliases": [
+        "Claude Sonnet 4.6",
+        "claude-sonnet-4.6"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://platform.claude.com/docs/en/docs/about-claude/pricing",
+      "checkedAt": "2026-05-01T00:00:00.000Z",
+      "rates": {
+        "input": 3,
+        "output": 15,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6,
+        "cacheRead": 0.3
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "AI Coding Usage",
+  "extension.description": "在 VS Code 中追踪 Claude Code 与 Codex 使用量。",
+  "command.refresh.title": "刷新使用量",
+  "command.openDashboard.title": "打开 AI Coding Usage",
+  "command.openSettings.title": "打开 AI Coding Usage 设置",
+  "command.detectLocalSources.title": "检测本地 AI 使用量来源",
+  "viewContainer.title": "AI 使用量",
+  "view.dashboard.name": "使用量仪表板",
+  "configuration.title": "AI Coding Usage",
+  "configuration.claudeUsagePath.description": "Claude Code usage data 的本地 path。留空时会自动套用检测到的本地来源。",
+  "configuration.codexUsagePath.description": "Codex usage data 的本地 path。留空时会自动套用检测到的本地来源。",
+  "configuration.defaultRange.description": "Dashboard 默认时间范围。",
+  "configuration.locale.description": "Dashboard 语言。使用 auto 会跟随 VS Code 显示语言。",
+  "configuration.timeZoneMode.description": "Dashboard 时区模式。system 会跟随这台机器，utc 使用 UTC，custom 搭配 IANA time zone。",
+  "configuration.customTimeZone.description": "Dashboard 自定义 IANA time zone，例如 Asia/Taipei。仅在 timeZoneMode 为 custom 时使用。",
+  "configuration.autoRefreshIntervalSeconds.description": "自动刷新间隔秒数。设为 0 可停止自动刷新；1 到 29 会视为 30 秒；建议默认值是 300 秒。",
+  "configuration.autoDetectLocalSources.description": "自动检测并套用本地 Claude Code 与 Codex usage paths。"
+}

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check i18n
+        run: npm run check:i18n
+
+      - name: Check privacy
+        run: npm run check:privacy
+
+      - name: Check pricing
+        run: npm run check:pricing
+
+      - name: Check test data
+        run: npm run check:test-data
+
+      - name: Package VSIX
+        run: npm run package:vsix
+
+      - name: Inspect VSIX
+        run: npm run inspect:vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-code-usage-${{ matrix.os }}-vsix
+          path: "*.vsix"
+          if-no-files-found: error

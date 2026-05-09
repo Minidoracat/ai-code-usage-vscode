@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "AI Coding Usage",
+  "extension.description": "VS Code で Claude Code と Codex の使用量を追跡します。",
+  "command.refresh.title": "使用量を更新",
+  "command.openDashboard.title": "AI Coding Usage を開く",
+  "command.openSettings.title": "AI Coding Usage 設定を開く",
+  "command.detectLocalSources.title": "ローカル AI usage sources を検出",
+  "viewContainer.title": "AI 使用量",
+  "view.dashboard.name": "使用量ダッシュボード",
+  "configuration.title": "AI Coding Usage",
+  "configuration.claudeUsagePath.description": "Claude Code usage data のローカル path。空の場合は検出したローカル source を自動適用します。",
+  "configuration.codexUsagePath.description": "Codex usage data のローカル path。空の場合は検出したローカル source を自動適用します。",
+  "configuration.defaultRange.description": "Dashboard の既定の時間範囲。",
+  "configuration.locale.description": "Dashboard の言語。auto は VS Code の表示言語に従います。",
+  "configuration.timeZoneMode.description": "Dashboard のタイムゾーンモードです。system はこのマシン、utc は UTC、custom は IANA time zone を使います。",
+  "configuration.customTimeZone.description": "Dashboard のカスタム IANA time zone です。例: Asia/Taipei。timeZoneMode が custom の場合のみ使います。",
+  "configuration.autoRefreshIntervalSeconds.description": "自動更新間隔を秒で指定します。0 にすると自動更新を停止します。1 から 29 は 30 秒として扱います。推奨の既定値は 300 秒です。",
+  "configuration.autoDetectLocalSources.description": "ローカル Claude Code と Codex usage paths を自動検出して適用します。"
+}

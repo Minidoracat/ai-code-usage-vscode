@@ -1,0 +1,2 @@
+{"provider":"claude","model":"claude-sonnet-4-6","sessionId":"claude-a","startedAt":"2026-04-30T08:00:00.000Z","endedAt":"2026-04-30T08:05:00.000Z","tokens":{"input":1200,"output":400,"cacheRead":100},"costUsd":0.01}
+{"provider":"claude","model":"claude-sonnet-4-6","sessionId":"claude-a","startedAt":"2026-04-30T08:06:00.000Z","endedAt":"2026-04-30T08:10:00.000Z","tokens":{"input":800,"output":200,"cacheWrite5m":50}}

@@ -1,0 +1,13 @@
+{
+  "AI Coding Usage refreshed.": "AI Coding Usage refreshed.",
+  "Use detected paths": "Use detected paths",
+  "Not now": "Not now",
+  "Open settings": "Open settings",
+  "Clear invalid paths": "Clear invalid paths",
+  "Choose folders": "Choose folders",
+  "Use folder": "Use folder",
+  "Select {0} usage folder": "Select {0} usage folder",
+  "AI Coding Usage found local usage sources. Confirm before reading:\n{0}": "AI Coding Usage found local usage sources. Confirm before reading:\n{0}",
+  "AI Coding Usage ignored usage paths that do not look valid on this machine:\n{0}": "AI Coding Usage ignored usage paths that do not look valid on this machine:\n{0}",
+  "AI Coding Usage did not find local Claude Code or Codex usage paths on this machine. Configure usage paths to load data.": "AI Coding Usage did not find local Claude Code or Codex usage paths on this machine. Configure usage paths to load data."
+}

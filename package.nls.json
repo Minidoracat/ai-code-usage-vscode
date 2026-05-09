@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "AI Coding Usage",
+  "extension.description": "Track Claude Code and Codex usage from VS Code.",
+  "command.refresh.title": "Refresh Usage",
+  "command.openDashboard.title": "Open AI Coding Usage",
+  "command.openSettings.title": "Open AI Coding Usage Settings",
+  "command.detectLocalSources.title": "Detect Local AI Usage Sources",
+  "viewContainer.title": "AI Usage",
+  "view.dashboard.name": "Usage Dashboard",
+  "configuration.title": "AI Coding Usage",
+  "configuration.claudeUsagePath.description": "Local Claude Code usage path. Leave empty to automatically apply detected local sources.",
+  "configuration.codexUsagePath.description": "Local Codex usage path. Leave empty to automatically apply detected local sources.",
+  "configuration.defaultRange.description": "Default dashboard time range.",
+  "configuration.locale.description": "Dashboard language. Use auto to follow the VS Code display language.",
+  "configuration.timeZoneMode.description": "Dashboard time zone mode. Use system to follow this machine, utc for UTC, or custom with an IANA time zone.",
+  "configuration.customTimeZone.description": "Custom IANA time zone for the dashboard, such as Asia/Taipei. Used only when timeZoneMode is custom.",
+  "configuration.autoRefreshIntervalSeconds.description": "Auto refresh interval in seconds. Use 0 to stop auto refresh. Values from 1 to 29 are treated as 30 seconds. The recommended default is 300 seconds.",
+  "configuration.autoDetectLocalSources.description": "Automatically detect and apply local Claude Code and Codex usage paths."
+}

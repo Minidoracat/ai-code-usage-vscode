@@ -1,0 +1,13 @@
+{
+  "AI Coding Usage refreshed.": "AI Coding Usage 已刷新。",
+  "Use detected paths": "使用检测到的路径",
+  "Not now": "暂时不要",
+  "Open settings": "打开设置",
+  "Clear invalid paths": "清除无效路径",
+  "Choose folders": "选择文件夹",
+  "Use folder": "使用此文件夹",
+  "Select {0} usage folder": "选择 {0} usage folder",
+  "AI Coding Usage found local usage sources. Confirm before reading:\n{0}": "AI Coding Usage 找到本地 usage 来源。读取前请先确认：\n{0}",
+  "AI Coding Usage ignored usage paths that do not look valid on this machine:\n{0}": "AI Coding Usage 已忽略看起来不属于这台机器的 usage paths：\n{0}",
+  "AI Coding Usage did not find local Claude Code or Codex usage paths on this machine. Configure usage paths to load data.": "AI Coding Usage 在这台机器上找不到 Claude Code 或 Codex usage paths。请设置 usage paths 才能加载数据。"
+}

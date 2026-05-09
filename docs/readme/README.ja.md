@@ -1,0 +1,112 @@
+# AI Coding Usage
+
+VS Code でローカルの Claude Code と Codex の使用量を追跡します。
+
+言語：[English](../../README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
+
+`AI Coding Usage` は local-first な VS Code extension です。AI coding の使用量、Token 数、セッション、API 相当のコスト見積もりを確認できます。Claude Code と Codex のローカル usage files を読み取り、provider、model、session、date range ごとに集計し、VS Code dashboard と status bar summary に表示します。
+
+## 機能
+
+- ローカルの Claude Code と Codex の使用量ソースを検出
+- Claude、Codex、または両方で provider filter
+- 今日、7 日、30 日、今月、カスタム日付範囲に対応
+- タイムゾーン選択：system time zone、UTC、またはカスタム IANA time zone
+- モデル別・セッション別の input tokens、output tokens、cache creation、cache reads、message counts
+- 対応モデルの API 相当 USD コスト見積もり
+- 設定可能な auto refresh interval
+- 多言語 dashboard UI：英語、繁体字中国語、簡体字中国語、日本語、韓国語
+- データをアップロードせずに dashboard screenshot をローカルでコピー
+
+## プライバシー
+
+この extension は完全に local-only です。
+
+- login なし
+- upload なし
+- cloud sync なし
+- telemetry なし
+- Runtime network requests なし
+
+extension は、設定済み、またはローカルソース検出で承認された usage paths のみを読み取ります。この repository の公開 screenshots と examples には synthetic fixture data のみを使用し、実際の Claude Code または Codex 履歴を使用しないでください。
+
+## ローカル使用量ソース
+
+以下の settings が空の場合、extension は一般的なローカルパスを検出して自動適用します。
+
+| Provider | Default path |
+| --- | --- |
+| Claude Code | `~/.claude/projects` |
+| Codex | `~/.codex/sessions` |
+
+ネイティブ Windows VS Code では、`~` は現在の Windows user home に解決されます。例：`C:\Users\<user>\.claude\projects` と `C:\Users\<user>\.codex\sessions`。
+
+Remote SSH または WSL のウィンドウでは、extension は remote extension host で実行され、remote または WSL の home directory を読み取ります。remote 環境で作業しながら Windows host の使用量を確認したい場合は、その extension host から読み取れるパスを設定してください。
+
+## コスト見積もり
+
+コスト値は API 相当の見積もりです。「この使用量が対応する public API pricing で課金された場合、おおよそいくらになるか」を確認するためのものです。
+
+これは次のものではありません。
+
+- Claude Code subscription bill
+- Codex subscription bill
+- provider invoice
+- 保証された billing statement
+
+pricing は package に含まれる `src/pricing/catalog.json` から計算されます。catalog には source URLs と `checkedAt` metadata が含まれ、`npm run check:pricing` が package 前に pricing metadata を検証します。
+
+## スクリーンショット
+
+Marketplace screenshots は synthetic fixture data のみで生成してください。公開ドキュメント用に実際の `.claude` または `.codex` 使用データをキャプチャしないでください。
+
+スクリーンショットのガイドは [docs/screenshots/README.md](../screenshots/README.md) にあります。
+
+## 開発
+
+```bash
+npm install
+npm run compile
+npm test
+npm run check:i18n
+npm run check:privacy
+npm run check:pricing
+npm run check:test-data
+npm run package:vsix
+npm run inspect:vsix
+```
+
+`npm run package:vsix` はローカルの `.vsix` package を作成します。Visual Studio Marketplace には公開しません。
+
+## Extension Host テスト
+
+この repository を VS Code で開き、`Run Extension` launch configuration を実行します。
+
+fixture のみでテストする場合は、次を設定してください。
+
+- `aiCodingUsage.claude.usagePath`: `test/fixtures/claude`
+- `aiCodingUsage.codex.usagePath`: `test/fixtures/codex`
+
+dashboard webview は `Preact`、`uPlot`、`esbuild` を使用します。runtime assets は `media/main.js` と `media/main.css` に package されます。extension runtime は外部 web assets を読み込みません。
+
+## リリース
+
+リリース準備は [docs/release.md](../release.md) に記載されています。
+
+公開には次が必要です。
+
+- Marketplace publisher ID：`minidoracat`
+- Marketplace `Manage` scope を持つ Azure DevOps Personal Access Token
+- GitHub environment：`marketplace-production`
+- Environment secret：`VSCE_PAT`
+- 明示的な GitHub Release、または explicit publish confirmation を含む manual workflow dispatch
+
+publish workflow は公開前にすべての release gates を再実行するように設計されています。ローカルテストや手動 Marketplace checklist を省略するために使用してはいけません。
+
+## サポート
+
+サポートと issue 報告については [SUPPORT.md](../../SUPPORT.md) を参照してください。
+
+## ライセンス
+
+MIT。詳細は [LICENSE](../../LICENSE) を参照してください。

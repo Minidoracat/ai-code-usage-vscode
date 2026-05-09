@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "provider": "claude",
+      "sessionId": "claude-missing-model",
+      "started_at": "2026-04-29T09:00:00.000Z",
+      "input_tokens": 250
+    },
+    {
+      "provider": "claude",
+      "model": "claude-haiku-4-5",
+      "sessionId": "claude-missing-tokens",
+      "startedAt": "2026-04-29T09:05:00.000Z"
+    }
+  ]
+}

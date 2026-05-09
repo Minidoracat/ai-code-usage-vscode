@@ -1,0 +1,186 @@
+{
+  "name": "ai-code-usage",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "0.1.0",
+  "publisher": "minidoracat",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/minidoracat/ai-code-usage-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minidoracat/ai-code-usage-vscode/issues"
+  },
+  "homepage": "https://github.com/minidoracat/ai-code-usage-vscode#readme",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "usage",
+    "cost",
+    "claude",
+    "codex",
+    "dashboard"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:aiCodingUsage.dashboard",
+    "onCommand:aiCodingUsage.refresh",
+    "onCommand:aiCodingUsage.openDashboard",
+    "onCommand:aiCodingUsage.openSettings",
+    "onCommand:aiCodingUsage.detectLocalSources"
+  ],
+  "main": "./out/src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiCodingUsage.refresh",
+        "title": "%command.refresh.title%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aiCodingUsage.openDashboard",
+        "title": "%command.openDashboard.title%",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "aiCodingUsage.openSettings",
+        "title": "%command.openSettings.title%",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "aiCodingUsage.detectLocalSources",
+        "title": "%command.detectLocalSources.title%",
+        "icon": "$(search)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiCodingUsage",
+          "title": "%viewContainer.title%",
+          "icon": "resources/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiCodingUsage": [
+        {
+          "id": "aiCodingUsage.dashboard",
+          "name": "%view.dashboard.name%",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "%configuration.title%",
+      "properties": {
+        "aiCodingUsage.claude.usagePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%configuration.claudeUsagePath.description%"
+        },
+        "aiCodingUsage.codex.usagePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%configuration.codexUsagePath.description%"
+        },
+        "aiCodingUsage.defaultRange": {
+          "type": "string",
+          "default": "last7Days",
+          "enum": [
+            "today",
+            "last7Days",
+            "last30Days",
+            "thisMonth",
+            "custom"
+          ],
+          "markdownDescription": "%configuration.defaultRange.description%"
+        },
+        "aiCodingUsage.locale": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "en",
+            "zh-TW",
+            "zh-CN",
+            "ja",
+            "ko"
+          ],
+          "markdownDescription": "%configuration.locale.description%"
+        },
+        "aiCodingUsage.timeZoneMode": {
+          "type": "string",
+          "default": "system",
+          "enum": [
+            "system",
+            "utc",
+            "custom"
+          ],
+          "markdownDescription": "%configuration.timeZoneMode.description%"
+        },
+        "aiCodingUsage.customTimeZone": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%configuration.customTimeZone.description%"
+        },
+        "aiCodingUsage.autoRefreshIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "maximum": 86400,
+          "markdownDescription": "%configuration.autoRefreshIntervalSeconds.description%"
+        },
+        "aiCodingUsage.autoDetectLocalSources": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%configuration.autoDetectLocalSources.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "build:webview": "esbuild webview-src/app.tsx --bundle --format=iife --platform=browser --target=es2020 --jsx=automatic --jsx-import-source=preact --outfile=media/main.js",
+    "compile": "npm run build:webview && tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run check:test-data && npm run compile && node --test out/test/**/*.test.js",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:privacy": "node scripts/check-privacy.mjs",
+    "check:pricing": "node scripts/check-pricing.mjs",
+    "check:test-data": "node scripts/check-test-data.mjs",
+    "inspect:vsix": "node scripts/inspect-vsix.mjs",
+    "package:vsix": "npm run compile && npm run check:i18n && npm run check:privacy && npm run check:pricing && npm run check:test-data && npx @vscode/vsce package --no-dependencies",
+    "deploy": "vsce publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.6.4",
+    "esbuild": "^0.28.0",
+    "preact": "^10.29.1",
+    "typescript": "^5.9.0",
+    "uplot": "^1.6.32"
+  }
+}
