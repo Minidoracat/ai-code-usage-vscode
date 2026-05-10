@@ -18,6 +18,22 @@ VS Code でローカルの Claude Code と Codex の使用量を追跡します�
 - 多言語 dashboard UI：英語、繁体字中国語、簡体字中国語、日本語、韓国語
 - データをアップロードせずに dashboard screenshot をローカルでコピー
 
+## 使い方
+
+dashboard は次のどちらかの方法で開けます。
+
+- Command Palette：`Ctrl+Shift+P`（macOS は `Cmd+Shift+P`）を押し、`AI Coding Usage を開く` を実行します。
+- 右下の status bar：`AI Usage` またはコスト概要の項目をクリックします。
+
+よく使うコマンド：
+
+- `AI Coding Usage を開く`：editor area に dashboard を開きます。
+- `使用量を更新`：ローカル usage files を再スキャンして dashboard を更新します。
+- `ローカル AI usage sources を検出`：ローカルの Claude Code と Codex usage paths を検出します。
+- `AI Coding Usage 設定を開く`：usage paths、言語、time zone、auto refresh を設定します。
+
+初回起動時は usage path settings を空のままにすると、extension が一般的なローカルパスを検出します。settings で `aiCodingUsage.claude.usagePath` または `aiCodingUsage.codex.usagePath` を手動入力することもできます。
+
 ## プライバシー
 
 この extension は完全に local-only です。
@@ -28,7 +44,7 @@ VS Code でローカルの Claude Code と Codex の使用量を追跡します�
 - telemetry なし
 - Runtime network requests なし
 
-extension は、設定済み、またはローカルソース検出で承認された usage paths のみを読み取ります。この repository の公開 screenshots と examples には synthetic fixture data のみを使用し、実際の Claude Code または Codex 履歴を使用しないでください。
+extension は、設定済み、またはローカルソース検出で承認された usage paths のみを読み取ります。
 
 ## ローカル使用量ソース
 
@@ -58,7 +74,13 @@ pricing は package に含まれる `src/pricing/catalog.json` から計算さ�
 
 ## スクリーンショット
 
-Marketplace screenshots は synthetic fixture data のみで生成してください。公開ドキュメント用に実際の `.claude` または `.codex` 使用データをキャプチャしないでください。
+以下の screenshots は日本語 UI の dashboard 表示例です。
+
+![AI Coding Usage 日本語 dashboard overview](../assets/screenshots/dashboard-ja-1.png)
+
+![AI Coding Usage 日本語 dashboard details](../assets/screenshots/dashboard-ja-2.png)
+
+![AI Coding Usage 日本語 dashboard pricing rules](../assets/screenshots/dashboard-ja-3.png)
 
 スクリーンショットのガイドは [docs/screenshots/README.md](../screenshots/README.md) にあります。
 

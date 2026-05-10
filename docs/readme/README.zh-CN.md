@@ -18,6 +18,22 @@
 - 多语言 dashboard UI：英文、繁体中文、简体中文、日文、韩文
 - 支持本机复制 dashboard 截图，不会上传数据
 
+## 使用方法
+
+可以用以下任一方式打开 dashboard：
+
+- Command Palette：按 `Ctrl+Shift+P`（macOS 为 `Cmd+Shift+P`），运行 `打开 AI Coding Usage`。
+- 右下角 status bar：点击 `AI Usage` 或成本摘要项目。
+
+常用命令：
+
+- `打开 AI Coding Usage`：在 editor area 打开 dashboard。
+- `刷新使用量`：重新扫描本机 usage files 并更新 dashboard。
+- `检测本地 AI 使用量来源`：检测本机 Claude Code 和 Codex usage paths。
+- `打开 AI Coding Usage 设置`：配置 usage paths、语言、时区和 auto refresh。
+
+第一次启动时，可以先让 usage path settings 保持为空，extension 会检测常见本机路径。也可以在 settings 手动填入 `aiCodingUsage.claude.usagePath` 或 `aiCodingUsage.codex.usagePath`。
+
 ## 隐私
 
 这个 extension 完全 local-only。
@@ -28,7 +44,7 @@
 - 不收集 telemetry
 - Runtime 不发起 network requests
 
-extension 只会读取你配置或通过本机来源检测批准的 usage paths。本 repository 的公开 screenshots 和 examples 必须使用 synthetic fixture data，不能使用真实 Claude Code 或 Codex 历史数据。
+extension 只会读取你配置或通过本机来源检测批准的 usage paths。
 
 ## 本机使用量来源
 
@@ -58,7 +74,13 @@ pricing 来自 package 内的 `src/pricing/catalog.json`。catalog 包含 source
 
 ## 截图
 
-Marketplace screenshots 必须只使用 synthetic fixture data 生成。不要截取真实 `.claude` 或 `.codex` 使用数据作为公开文档。
+以下 screenshots 展示 dashboard 在简体中文界面的画面。
+
+![AI Coding Usage 简体中文 dashboard overview](../assets/screenshots/dashboard-zh-cn-1.png)
+
+![AI Coding Usage 简体中文 dashboard details](../assets/screenshots/dashboard-zh-cn-2.png)
+
+![AI Coding Usage 简体中文 dashboard pricing rules](../assets/screenshots/dashboard-zh-cn-3.png)
 
 截图指引见 [docs/screenshots/README.md](../screenshots/README.md)。
 

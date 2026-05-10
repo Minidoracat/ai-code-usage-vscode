@@ -18,6 +18,22 @@ Languages: [English](README.md) | [繁體中文](docs/readme/README.zh-TW.md) | 
 - Multi-language dashboard UI: English, Traditional Chinese, Simplified Chinese, Japanese, and Korean
 - Local screenshot copy support for sharing the dashboard without uploading data
 
+## Usage
+
+Open the dashboard in either of these ways:
+
+- Command Palette: press `Ctrl+Shift+P` (`Cmd+Shift+P` on macOS), then run `Open AI Coding Usage`.
+- Status bar: click the bottom-right `AI Usage` / cost summary item.
+
+Useful commands:
+
+- `Open AI Coding Usage`: open the dashboard in the editor area.
+- `Refresh Usage`: rescan local usage files and refresh the dashboard.
+- `Detect Local AI Usage Sources`: detect local Claude Code and Codex usage paths.
+- `Open AI Coding Usage Settings`: configure usage paths, language, time zone, and auto refresh.
+
+On first launch, leave the usage path settings empty to let the extension detect common local paths. You can also open settings and fill `aiCodingUsage.claude.usagePath` or `aiCodingUsage.codex.usagePath` manually.
+
 ## Privacy
 
 This extension is local-only.
@@ -28,7 +44,7 @@ This extension is local-only.
 - No telemetry
 - No runtime network requests
 
-The extension reads only the local usage paths you configure or approve through local source detection. Public screenshots and examples in this repository must use synthetic fixture data, not real Claude Code or Codex history.
+The extension reads only the local usage paths you configure or approve through local source detection.
 
 ## Local Usage Sources
 
@@ -58,7 +74,15 @@ Pricing is calculated from the packaged pricing catalog in `src/pricing/catalog.
 
 ## Screenshots
 
-Marketplace screenshots should be generated from synthetic fixture data only. Do not capture real `.claude` or `.codex` usage data for public documentation.
+The screenshots below show the dashboard across supported languages.
+
+| Language | Overview | Details | Pricing |
+| --- | --- | --- | --- |
+| English | <img src="docs/assets/screenshots/dashboard-en-1.png" alt="AI Coding Usage English dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-en-2.png" alt="AI Coding Usage English dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-en-3.png" alt="AI Coding Usage English dashboard pricing rules" width="260"> |
+| 繁體中文 | <img src="docs/assets/screenshots/dashboard-zh-tw-1.png" alt="AI Coding Usage 繁體中文 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-tw-2.png" alt="AI Coding Usage 繁體中文 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-tw-3.png" alt="AI Coding Usage 繁體中文 dashboard pricing rules" width="260"> |
+| 简体中文 | <img src="docs/assets/screenshots/dashboard-zh-cn-1.png" alt="AI Coding Usage 简体中文 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-cn-2.png" alt="AI Coding Usage 简体中文 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-cn-3.png" alt="AI Coding Usage 简体中文 dashboard pricing rules" width="260"> |
+| 日本語 | <img src="docs/assets/screenshots/dashboard-ja-1.png" alt="AI Coding Usage 日本語 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-ja-2.png" alt="AI Coding Usage 日本語 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-ja-3.png" alt="AI Coding Usage 日本語 dashboard pricing rules" width="260"> |
+| 한국어 | <img src="docs/assets/screenshots/dashboard-ko-1.png" alt="AI Coding Usage 한국어 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-ko-2.png" alt="AI Coding Usage 한국어 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-ko-3.png" alt="AI Coding Usage 한국어 dashboard pricing rules" width="260"> |
 
 Screenshot guidance lives in [docs/screenshots/README.md](docs/screenshots/README.md).
 
