@@ -413,6 +413,65 @@ h2 {
   animation: spin 760ms linear infinite;
 }
 
+.busy-strip-detail {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.busy-progress-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 160px;
+}
+
+.busy-progress-copy strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.busy-progress-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.busy-progress-metrics {
+  display: flex;
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.busy-progress-metrics span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.busy-progress-metrics em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.busy-progress-path {
+  flex: 1 1 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .summary-card {
   position: relative;
   overflow: hidden;
@@ -836,7 +895,9 @@ td.numeric {
 }
 
 .loading-steps,
-.loading-source-list {
+.loading-source-list,
+.loading-range-card,
+.loading-progress-card {
   grid-column: 1 / -1;
   display: grid;
   gap: 7px;
@@ -935,6 +996,71 @@ td.numeric {
   white-space: nowrap;
 }
 
+.loading-range-card {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--vscode-input-background, transparent);
+}
+
+.loading-progress-card {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--vscode-input-background, transparent);
+}
+
+.loading-cache-state {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(90px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.loading-cache-state span,
+.loading-current-path span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.loading-cache-state strong {
+  color: var(--accent-2);
+}
+
+.loading-cache-state em {
+  overflow: hidden;
+  color: var(--muted);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loading-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.loading-current-path {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.loading-current-path code {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1005,7 +1131,11 @@ td.numeric {
   }
 
   .loading-steps,
-  .loading-source-list {
+  .loading-source-list,
+  .loading-range-card,
+  .loading-progress-grid,
+  .loading-cache-state,
+  .loading-current-path {
     grid-template-columns: 1fr;
   }
 

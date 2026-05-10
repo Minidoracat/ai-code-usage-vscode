@@ -1,15 +1,17 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
+import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import { messagesFor, normalizeLocale } from "../i18n/messages";
 import { isNativeUsagePath, usageSourceCandidates } from "../services/SourceDetectionService";
+import { TimeRangeService } from "../services/TimeRangeService";
+import { defaultTimeZoneMode, isTimeZoneMode, isValidTimeZone, resolveTimeZone } from "../services/TimeZoneService";
 import { type DashboardLoadingState, webviewProtocolVersion } from "./protocol";
 
-export function renderDashboardHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+export function renderDashboardHtml(webview: vscode.Webview, extensionUri: vscode.Uri, initialLoadingState = createInitialLoadingState()): string {
   const nonce = createNonce();
   const chartStylesUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "main.css"));
   const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "styles.css"));
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "main.js"));
-  const initialLoadingState = createInitialLoadingState();
   const loadingStateJson = escapeAttribute(JSON.stringify(initialLoadingState));
 
   return `<!DOCTYPE html>
@@ -58,7 +60,17 @@ function createInitialLoadingState(): DashboardLoadingState {
     messages: messagesFor(locale),
     phase: "starting",
     sources,
+    range: new TimeRangeService(() => new Date(), loadingTimeZoneState(config)).resolve(
+      normalizeTimeRangeKind(config.get<string>("defaultRange"), defaultTimeRangeKind),
+    ),
   };
+}
+
+function loadingTimeZoneState(config: vscode.WorkspaceConfiguration) {
+  const configuredMode = config.get<string>("timeZoneMode", defaultTimeZoneMode);
+  const mode = isTimeZoneMode(configuredMode) ? configuredMode : defaultTimeZoneMode;
+  const configuredZone = config.get<string>("customTimeZone", "").trim();
+  return resolveTimeZone(mode, configuredZone && isValidTimeZone(configuredZone) ? configuredZone : undefined);
 }
 
 function localePreferenceFromConfig(config: vscode.WorkspaceConfiguration): DashboardLoadingState["localePreference"] {
@@ -103,7 +115,22 @@ function renderLoadingShell(state: DashboardLoadingState): string {
         )
         .join("")}
     </div>
+    ${state.range ? renderLoadingRange(state) : ""}
   </section>`;
+}
+
+function renderLoadingRange(state: DashboardLoadingState): string {
+  const t = (key: string) => state.messages[key] ?? key;
+  const range = state.range;
+  if (!range) {
+    return "";
+  }
+  return `<dl class="usage-metric-grid loading-range-card">
+    <div><dt>${escapeHtml(t("filter.timeRange"))}</dt><dd>${escapeHtml(t(`range.${range.kind}`))}</dd></div>
+    <div><dt>${escapeHtml(t("field.startDate"))}</dt><dd>${escapeHtml(range.startDate)}</dd></div>
+    <div><dt>${escapeHtml(t("field.endDate"))}</dt><dd>${escapeHtml(range.endDate)}</dd></div>
+    <div><dt>${escapeHtml(t("timezone.label"))}</dt><dd>${escapeHtml(range.timeZone.label)}</dd></div>
+  </dl>`;
 }
 
 function createNonce(): string {

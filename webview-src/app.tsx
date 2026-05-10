@@ -226,10 +226,7 @@ function Dashboard() {
       </header>
 
       {isPending ? (
-        <div class="busy-strip" role="status" aria-live="polite">
-          <span class="busy-spinner" aria-hidden="true" />
-          <span>{translate("state.loading")}</span>
-        </div>
+        <RefreshProgress state={loadingState} translate={translate} locale={locale} />
       ) : null}
 
       <section class="control-panel" aria-label={translate("filter.timeRange")}>
@@ -396,6 +393,8 @@ function InitialLoading(props: { state: DashboardLoadingState; error?: string })
   const translate = (key: string) => props.state.messages[key] ?? key;
   const phaseOrder: DashboardLoadingPhase[] = ["starting", "detectingSources", "readingSources", "calculating"];
   const activeIndex = Math.max(0, phaseOrder.indexOf(props.state.phase));
+  const progress = props.state.progress;
+  const cache = props.state.cache;
 
   return (
     <section class="loading-panel" aria-live="polite">
@@ -425,8 +424,114 @@ function InitialLoading(props: { state: DashboardLoadingState; error?: string })
           </div>
         ))}
       </div>
+      {props.state.range ? <LoadingRangeSummary range={props.state.range} translate={translate} /> : null}
+      {progress || cache ? (
+        <div class="loading-progress-card">
+          {cache ? (
+            <div class="loading-cache-state">
+              <span>{translate("loading.cache.label")}</span>
+              <strong>{translate(`loading.cache.${cache.status}`)}</strong>
+              <em>
+                {cache.rangeComplete ? translate("loading.cache.rangeComplete") : translate("loading.cache.rangePending")}
+                {" · "}
+                {cache.historicalComplete ? translate("loading.cache.historyComplete") : translate("loading.cache.historyPending")}
+              </em>
+            </div>
+          ) : null}
+          {progress ? (
+            <div class="loading-progress-grid">
+              <UsageMetric label={translate("loading.progress.filesChecked")} value={`${formatNumber(progress.filesChecked, props.state.locale)} / ${formatNumber(progress.filesTotal, props.state.locale)}`} />
+              <UsageMetric label={translate("loading.progress.filesParsed")} value={formatNumber(progress.filesParsed, props.state.locale)} />
+              <UsageMetric label={translate("loading.progress.recordsLoaded")} value={formatNumber(progress.recordsLoaded, props.state.locale)} />
+              <UsageMetric label={translate("loading.progress.provider")} value={progress.currentProvider ?? translate("state.unknown")} />
+            </div>
+          ) : null}
+          {progress?.currentPath ? (
+            <div class="loading-current-path">
+              <span>{translate("loading.progress.currentPath")}</span>
+              <code title={progress.currentPath}>{progress.currentPath}</code>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function RefreshProgress(props: {
+  state: DashboardLoadingState;
+  translate: (key: string) => string;
+  locale: string;
+}) {
+  const progress = props.state.progress;
+  const cache = props.state.cache;
+  const rangeText = props.state.range ? formatLoadingRange(props.state.range, props.translate) : undefined;
+  const cacheStatus = cache ? props.translate(`loading.cache.${cache.status}`) : undefined;
+  const cacheRange = cache
+    ? cache.rangeComplete
+      ? props.translate("loading.cache.rangeComplete")
+      : props.translate("loading.cache.rangePending")
+    : undefined;
+  const cacheHistory = cache
+    ? cache.historicalComplete
+      ? props.translate("loading.cache.historyComplete")
+      : props.translate("loading.cache.historyPending")
+    : undefined;
+
+  return (
+    <div class="busy-strip busy-strip-detail" role="status" aria-live="polite">
+      <span class="busy-spinner" aria-hidden="true" />
+      <div class="busy-progress-copy">
+        <strong>{props.translate(`loading.phase.${props.state.phase}`)}</strong>
+        {rangeText ? <span>{rangeText}</span> : null}
+        <span>{cacheStatus ? `${cacheStatus} · ${cacheRange} · ${cacheHistory}` : props.translate("state.loading")}</span>
+      </div>
+      {progress ? (
+        <div class="busy-progress-metrics">
+          <span>
+            <em>{props.translate("loading.progress.filesChecked")}</em>
+            {formatNumber(progress.filesChecked, props.locale)} / {formatNumber(progress.filesTotal, props.locale)}
+          </span>
+          <span>
+            <em>{props.translate("loading.progress.filesParsed")}</em>
+            {formatNumber(progress.filesParsed, props.locale)}
+          </span>
+          <span>
+            <em>{props.translate("loading.progress.recordsLoaded")}</em>
+            {formatNumber(progress.recordsLoaded, props.locale)}
+          </span>
+          <span>
+            <em>{props.translate("loading.progress.provider")}</em>
+            {progress.currentProvider ?? props.translate("state.unknown")}
+          </span>
+        </div>
+      ) : null}
+      {progress?.currentPath ? (
+        <code class="busy-progress-path" title={progress.currentPath}>
+          {props.translate("loading.progress.currentPath")}: {progress.currentPath}
+        </code>
+      ) : null}
+    </div>
+  );
+}
+
+function LoadingRangeSummary(props: {
+  range: NonNullable<DashboardLoadingState["range"]>;
+  translate: (key: string) => string;
+}) {
+  return (
+    <dl class="usage-metric-grid loading-range-card">
+      <UsageMetric label={props.translate("filter.timeRange")} value={props.translate(`range.${props.range.kind}`)} />
+      <UsageMetric label={props.translate("field.startDate")} value={props.range.startDate} />
+      <UsageMetric label={props.translate("field.endDate")} value={props.range.endDate} />
+      <UsageMetric label={props.translate("timezone.label")} value={props.range.timeZone.label} />
+    </dl>
+  );
+}
+
+function formatLoadingRange(range: NonNullable<DashboardLoadingState["range"]>, translate: (key: string) => string): string {
+  const dateRange = range.startDate === range.endDate ? range.startDate : `${range.startDate} - ${range.endDate}`;
+  return `${translate(`range.${range.kind}`)} · ${dateRange} · ${range.timeZone.label}`;
 }
 
 function DataPanels(props: {
@@ -1674,6 +1779,20 @@ function readInitialLoadingState(): DashboardLoadingState {
       "loading.source.invalid": "Needs attention",
       "loading.source.missing": "No path",
       "loading.source.none": "No path available",
+      "loading.cache.label": "Cache",
+      "loading.cache.cold": "Building cache",
+      "loading.cache.warm": "Using cache",
+      "loading.cache.partial": "Partial cache",
+      "loading.cache.rebuilding": "Refreshing cache",
+      "loading.cache.rangeComplete": "Range complete",
+      "loading.cache.rangePending": "Range pending",
+      "loading.cache.historyComplete": "History complete",
+      "loading.cache.historyPending": "History pending",
+      "loading.progress.filesChecked": "Files checked",
+      "loading.progress.filesParsed": "Files parsed",
+      "loading.progress.recordsLoaded": "Records loaded",
+      "loading.progress.provider": "Provider",
+      "loading.progress.currentPath": "Current file",
     },
     phase: "starting",
     sources: [

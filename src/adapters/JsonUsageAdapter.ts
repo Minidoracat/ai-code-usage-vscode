@@ -11,9 +11,27 @@ import type {
   UsageRecord,
 } from "../domain/types";
 
-const parserVersion = "local-json-v2";
+export const jsonUsageParserVersion = "local-json-v2";
 const maxDirectoryDepth = 6;
 const maxFilesPerSource = 10_000;
+const directoryReadConcurrency = 8;
+const fileStatConcurrency = 32;
+
+export type UsageFileRef = {
+  filePath: string;
+  mtimeMs: number;
+  size: number;
+  pathDateKey?: string;
+};
+
+export type UsageFileListResult = {
+  provider: UsageProvider;
+  sourcePath?: string;
+  files: UsageFileRef[];
+  warnings: ImportIssue[];
+  errors: ImportIssue[];
+  sourceMeta: SourceMeta[];
+};
 
 export abstract class JsonUsageAdapter implements UsageAdapter {
   public abstract readonly provider: UsageProvider;
@@ -21,11 +39,35 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   public constructor(private readonly configuredPath?: string) {}
 
   public async importUsage(options?: { usagePath?: string }): Promise<AdapterImportResult> {
+    const listed = await this.listUsageFiles(options);
     const usagePath = options?.usagePath ?? this.configuredPath;
     const readAt = new Date().toISOString();
     const result: AdapterImportResult = {
       provider: this.provider,
       records: [],
+      warnings: [...listed.warnings],
+      errors: [...listed.errors],
+      sourceMeta: [...listed.sourceMeta],
+    };
+
+    if (!usagePath) {
+      return result;
+    }
+
+    for (const file of listed.files) {
+      await this.readFile(file.filePath, result, readAt);
+    }
+
+    return result;
+  }
+
+  public async listUsageFiles(options?: { usagePath?: string }): Promise<UsageFileListResult> {
+    const usagePath = options?.usagePath ?? this.configuredPath;
+    const readAt = new Date().toISOString();
+    const result: UsageFileListResult = {
+      provider: this.provider,
+      sourcePath: usagePath,
+      files: [],
       warnings: [],
       errors: [],
       sourceMeta: [],
@@ -36,21 +78,29 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       return result;
     }
 
-    const files = await this.collectFiles(usagePath, result, readAt);
-    for (const file of files) {
-      await this.readFile(file, result, readAt);
-    }
-
+    result.files = await this.collectFiles(usagePath, result, readAt);
     return result;
   }
 
-  private async collectFiles(usagePath: string, result: AdapterImportResult, readAt: string): Promise<string[]> {
+  public async importUsageFile(filePath: string, readAt = new Date().toISOString()): Promise<AdapterImportResult> {
+    const result: AdapterImportResult = {
+      provider: this.provider,
+      records: [],
+      warnings: [],
+      errors: [],
+      sourceMeta: [],
+    };
+    await this.readFile(filePath, result, readAt);
+    return result;
+  }
+
+  private async collectFiles(usagePath: string, result: UsageFileListResult, readAt: string): Promise<UsageFileRef[]> {
     try {
       const stat = await fs.stat(usagePath);
       if (stat.isDirectory()) {
         const meta = sourceMeta(usagePath, "directory", readAt);
         result.sourceMeta.push(meta);
-        const files = await this.collectDirectoryFiles(usagePath, 0, result);
+        const files = await this.collectDirectoryFiles(usagePath, 0, result, new AsyncLimiter(fileStatConcurrency));
         if (files.length === 0) {
           result.warnings.push(issue("warning", "empty_directory", "No JSON or JSONL usage files were found.", usagePath, this.provider));
         }
@@ -60,7 +110,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
         return files;
       }
       if (stat.isFile()) {
-        return [usagePath];
+        return [usageFileRef(usagePath, stat)];
       }
       result.errors.push(issue("error", "unsupported_path", "Usage path is neither a file nor a directory.", usagePath, this.provider));
       return [];
@@ -70,7 +120,12 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
   }
 
-  private async collectDirectoryFiles(directoryPath: string, depth: number, result: AdapterImportResult): Promise<string[]> {
+  private async collectDirectoryFiles(
+    directoryPath: string,
+    depth: number,
+    result: UsageFileListResult,
+    statLimiter: AsyncLimiter,
+  ): Promise<UsageFileRef[]> {
     if (depth > maxDirectoryDepth) {
       return [];
     }
@@ -83,16 +138,31 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       return [];
     }
 
-    const files: string[] = [];
-    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-      if (files.length >= maxFilesPerSource) {
-        break;
-      }
-      const fullPath = path.join(directoryPath, entry.name);
-      if (entry.isDirectory()) {
-        files.push(...(await this.collectDirectoryFiles(fullPath, depth + 1, result)));
-      } else if (entry.isFile() && isUsageFileName(entry.name)) {
-        files.push(fullPath);
+    const sortedEntries = entries.sort((left, right) => left.name.localeCompare(right.name));
+    const fileEntries = sortedEntries.filter((entry) => entry.isFile() && isUsageFileName(entry.name));
+    const directoryEntries = sortedEntries.filter((entry) => entry.isDirectory());
+    const fileRefs = (
+      await mapWithConcurrency(fileEntries, fileStatConcurrency, async (entry) => {
+        const fullPath = path.join(directoryPath, entry.name);
+        try {
+          return await statLimiter.run(async () => usageFileRef(fullPath, await fs.stat(fullPath)));
+        } catch (error) {
+          result.errors.push(issue("error", "file_unreadable", errorMessage(error), fullPath, this.provider));
+          return undefined;
+        }
+      })
+    ).filter((file): file is UsageFileRef => Boolean(file));
+
+    const files = fileRefs.slice(0, maxFilesPerSource);
+    if (files.length < maxFilesPerSource) {
+      const directoryFiles = await mapWithConcurrency(directoryEntries, directoryReadConcurrency, (entry) =>
+        this.collectDirectoryFiles(path.join(directoryPath, entry.name), depth + 1, result, statLimiter),
+      );
+      for (const nestedFiles of directoryFiles) {
+        files.push(...nestedFiles);
+        if (files.length >= maxFilesPerSource) {
+          break;
+        }
       }
     }
 
@@ -322,9 +392,31 @@ function sourceMeta(sourcePath: string, sourceKindValue: SourceKind, readAt: str
     sourcePath,
     sourceKind: sourceKindValue,
     schemaVersion: "local-usage-v2",
-    parserVersion,
+    parserVersion: jsonUsageParserVersion,
     readAt,
   };
+}
+
+function usageFileRef(filePath: string, stat: { mtimeMs: number; size: number }): UsageFileRef {
+  return {
+    filePath,
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    pathDateKey: dateKeyFromPath(filePath),
+  };
+}
+
+function dateKeyFromPath(filePath: string): string | undefined {
+  const parts = filePath.split(/[\\/]+/);
+  for (let index = 0; index <= parts.length - 3; index += 1) {
+    const year = parts[index];
+    const month = parts[index + 1];
+    const day = parts[index + 2];
+    if (/^\d{4}$/.test(year ?? "") && /^\d{2}$/.test(month ?? "") && /^\d{2}$/.test(day ?? "")) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return undefined;
 }
 
 function issue(
@@ -412,4 +504,46 @@ function normalizeIso(value: string | undefined): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+class AsyncLimiter {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+
+  public constructor(private readonly limit: number) {}
+
+  public async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.active += 1;
+    try {
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.queue.shift()?.();
+    }
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(limit, 1), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = items[index];
+      if (item === undefined) {
+        break;
+      }
+      results[index] = await worker(item, index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }

@@ -4,9 +4,9 @@ import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
 import { tokenTotal } from "../domain/math";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import type {
-  AdapterImportResult,
   ImportIssue,
   PricingCatalog,
+  TimeRange,
   TimeRangeKind,
   TimeZoneMode,
   TimeZoneState,
@@ -18,6 +18,7 @@ import { type MessageKey, messagesFor, normalizeLocale, translate } from "../i18
 import pricingCatalog from "../pricing/catalog.json";
 import { PricingService } from "../services/PricingService";
 import { defaultAutoRefreshIntervalSeconds, normalizeAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
+import { CachedUsageImporter, type CachedUsageProgress, type CachedUsageState } from "../services/CachedUsageImporter";
 import { isNativeUsagePath, SourceDetectionService, usageSourceCandidates } from "../services/SourceDetectionService";
 import { TimeRangeService } from "../services/TimeRangeService";
 import { defaultTimeZoneMode, isTimeZoneMode, isValidTimeZone, resolveTimeZone } from "../services/TimeZoneService";
@@ -42,14 +43,14 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private providerFilter: UsageProviderFilter = "all";
   private invalidSourcePromptShown = false;
   private noSourcePromptShown = false;
-  private cachedImports?: AdapterImportResult[];
-  private cachedImportKey?: string;
+  private readonly cachedImporter: CachedUsageImporter;
   private autoRefreshTimer?: ReturnType<typeof setTimeout>;
   private autoRefreshInProgress = false;
   private refreshRun = 0;
   private customRange: { start?: string; end?: string } = {};
 
   public constructor(private readonly context: vscode.ExtensionContext) {
+    this.cachedImporter = new CachedUsageImporter(vscode.Uri.joinPath(this.context.globalStorageUri, "usage-cache", "v1").fsPath);
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusBarItem.name = "AI Coding Usage";
     this.statusBarItem.command = "aiCodingUsage.openDashboard";
@@ -81,8 +82,9 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
   public resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
+    this.initializeRangeFromConfig();
     webviewView.webview.options = this.webviewOptions();
-    webviewView.webview.html = renderDashboardHtml(webviewView.webview, this.context.extensionUri);
+    webviewView.webview.html = renderDashboardHtml(webviewView.webview, this.context.extensionUri, this.loadingState("starting"));
     webviewView.webview.onDidReceiveMessage((message) => void this.handleMessage(message, webviewView.webview));
     void this.refresh({ allowSourcePrompt: true });
   }
@@ -93,6 +95,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
   public async refresh(options: { allowSourcePrompt?: boolean; forceImport?: boolean } = {}): Promise<void> {
     const run = ++this.refreshRun;
+    this.initializeRangeFromConfig();
     await this.postLoadingData("detectingSources", run);
     try {
       const summary = await this.loadSummary(options, run);
@@ -126,7 +129,8 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         retainContextWhenHidden: true,
       },
     );
-    this.panel.webview.html = renderDashboardHtml(this.panel.webview, this.context.extensionUri);
+    this.initializeRangeFromConfig();
+    this.panel.webview.html = renderDashboardHtml(this.panel.webview, this.context.extensionUri, this.loadingState("starting"));
     this.panel.webview.onDidReceiveMessage((message) => void this.handleMessage(message, this.panel?.webview));
     this.panel.onDidDispose(() => {
       this.panel = undefined;
@@ -210,18 +214,15 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
   private async loadSummary(options: { allowSourcePrompt?: boolean; forceImport?: boolean } = {}, run = this.refreshRun): Promise<UsageSummary> {
     const config = vscode.workspace.getConfiguration("aiCodingUsage");
-    if (!this.rangeInitialized) {
-      this.rangeKind = normalizeTimeRangeKind(config.get<string>("defaultRange"), this.rangeKind);
-      this.rangeInitialized = true;
-    }
+    this.initializeRangeFromConfig();
     if (options.allowSourcePrompt) {
       await this.previewDetectedSources(config);
     }
-    const range = new TimeRangeService(() => new Date(), this.timeZoneState()).resolve(this.rangeKind, this.customRange);
+    const range = this.resolveCurrentRange();
     await this.postLoadingData("readingSources", run);
-    const imports = await this.importUsageCached(vscode.workspace.getConfiguration("aiCodingUsage"), Boolean(options.forceImport));
-    await this.postLoadingData("calculating", run);
-    return new UsageAggregator(new PricingService(pricingCatalog as PricingCatalog)).aggregate(imports, range, this.providerFilter);
+    const load = await this.importUsageCached(config, range, run, Boolean(options.forceImport));
+    await this.postLoadingData("calculating", run, undefined, load.cache);
+    return new UsageAggregator(new PricingService(pricingCatalog as PricingCatalog)).aggregate(load.imports, range, this.providerFilter);
   }
 
   public async detectLocalSources(): Promise<void> {
@@ -229,50 +230,43 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     await this.refresh({ allowSourcePrompt: true });
   }
 
-  private async importUsageCached(config: vscode.WorkspaceConfiguration, forceImport: boolean): Promise<AdapterImportResult[]> {
-    const importKey = this.importKey(config);
-    if (!forceImport && this.cachedImports && this.cachedImportKey === importKey) {
-      return this.cachedImports;
-    }
-
-    this.cachedImports = await this.importUsage(config);
-    this.cachedImportKey = importKey;
-    return this.cachedImports;
+  private async importUsageCached(
+    config: vscode.WorkspaceConfiguration,
+    range: TimeRange,
+    run: number,
+    forceReparse: boolean,
+  ) {
+    return this.cachedImporter.loadForRange({
+      sources: this.usageSources(config),
+      range,
+      forceReparse,
+      onProgress: (progress, cache) => this.postLoadingData("readingSources", run, progress, cache),
+    });
   }
 
   private resetSourceState(): void {
     this.invalidSourcePromptShown = false;
     this.noSourcePromptShown = false;
-    this.cachedImports = undefined;
-    this.cachedImportKey = undefined;
   }
 
-  private async importUsage(config: vscode.WorkspaceConfiguration): Promise<AdapterImportResult[]> {
+  private usageSources(config: vscode.WorkspaceConfiguration) {
     const sourcePaths = this.configuredUsagePaths(config);
     const claudePath = sourcePaths.find((source) => source.provider === "claude");
     const codexPath = sourcePaths.find((source) => source.provider === "codex");
-    const imports = await Promise.all([
-      new ClaudeUsageAdapter(claudePath?.sourcePath).importUsage(),
-      new CodexUsageAdapter(codexPath?.sourcePath).importUsage(),
-    ]);
-
-    for (const result of imports) {
-      const sourcePath = sourcePaths.find((source) => source.provider === result.provider);
-      if (sourcePath?.issue) {
-        result.warnings = result.warnings.filter((warning) => warning.code !== "missing_path");
-        result.warnings.push(sourcePath.issue);
-      }
-    }
-
-    return imports;
-  }
-
-  private importKey(config: vscode.WorkspaceConfiguration): string {
-    return JSON.stringify({
-      claudePath: this.configuredUsagePath(config, "claude").sourcePath,
-      codexPath: this.configuredUsagePath(config, "codex").sourcePath,
-      platform: process.platform,
-    });
+    return [
+      {
+        provider: "claude" as const,
+        sourcePath: claudePath?.sourcePath ?? "",
+        adapter: new ClaudeUsageAdapter(claudePath?.sourcePath),
+        issue: claudePath?.issue,
+      },
+      {
+        provider: "codex" as const,
+        sourcePath: codexPath?.sourcePath ?? "",
+        adapter: new CodexUsageAdapter(codexPath?.sourcePath),
+        issue: codexPath?.issue,
+      },
+    ];
   }
 
   private localePreference(): DashboardLocalePreference {
@@ -309,6 +303,18 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     return resolveTimeZone(this.timeZoneMode(), this.customTimeZone());
   }
 
+  private initializeRangeFromConfig(): void {
+    if (this.rangeInitialized) {
+      return;
+    }
+    this.rangeKind = normalizeTimeRangeKind(vscode.workspace.getConfiguration("aiCodingUsage").get<string>("defaultRange"), this.rangeKind);
+    this.rangeInitialized = true;
+  }
+
+  private resolveCurrentRange(): TimeRange {
+    return new TimeRangeService(() => new Date(), this.timeZoneState()).resolve(this.rangeKind, this.customRange);
+  }
+
   private configureAutoRefresh(): void {
     this.stopAutoRefresh();
     const intervalSeconds = this.autoRefreshIntervalSeconds();
@@ -333,7 +339,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
     this.autoRefreshInProgress = true;
     try {
-      await this.refresh({ allowSourcePrompt: false, forceImport: true });
+      await this.refresh({ allowSourcePrompt: false });
     } finally {
       this.autoRefreshInProgress = false;
       this.configureAutoRefresh();
@@ -349,7 +355,12 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async postLoadingData(phase: DashboardLoadingPhase, run = this.refreshRun): Promise<void> {
+  private async postLoadingData(
+    phase: DashboardLoadingPhase,
+    run = this.refreshRun,
+    progress?: CachedUsageProgress,
+    cache?: CachedUsageState,
+  ): Promise<void> {
     if (run !== this.refreshRun) {
       return;
     }
@@ -358,19 +369,22 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         webview.postMessage({
           type: "loadingData",
           version: webviewProtocolVersion,
-          payload: this.loadingState(phase),
+          payload: this.loadingState(phase, progress, cache),
         }),
       ),
     );
   }
 
-  private loadingState(phase: DashboardLoadingPhase) {
+  private loadingState(phase: DashboardLoadingPhase, progress?: CachedUsageProgress, cache?: CachedUsageState) {
     return {
       locale: this.resolvedLocale(),
       localePreference: this.localePreference(),
       messages: messagesFor(this.resolvedLocale()),
       phase,
       sources: this.loadingSources(),
+      range: this.resolveCurrentRange(),
+      progress,
+      cache,
     };
   }
 

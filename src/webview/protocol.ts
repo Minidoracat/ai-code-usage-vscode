@@ -1,4 +1,4 @@
-import type { TimeRangeKind, TimeZoneMode, TimeZoneState, UsageProvider, UsageProviderFilter, UsageSummary } from "../domain/types";
+import type { TimeRange, TimeRangeKind, TimeZoneMode, TimeZoneState, UsageProvider, UsageProviderFilter, UsageSummary } from "../domain/types";
 import { isTimeRangeKind } from "../domain/timeRange";
 import { isValidAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { isTimeZoneMode, isValidTimeZone } from "../services/TimeZoneService";
@@ -87,12 +87,32 @@ export type DashboardLoadingSource = {
   path?: string;
 };
 
+export type DashboardCacheStatus = "cold" | "warm" | "partial" | "rebuilding";
+
+export type DashboardLoadingProgress = {
+  filesTotal: number;
+  filesChecked: number;
+  filesParsed: number;
+  recordsLoaded: number;
+  currentProvider?: UsageProvider;
+  currentPath?: string;
+};
+
+export type DashboardCacheState = {
+  status: DashboardCacheStatus;
+  rangeComplete: boolean;
+  historicalComplete: boolean;
+};
+
 export type DashboardLoadingState = {
   locale: string;
   localePreference: DashboardLocalePreference;
   messages: Record<string, string>;
   phase: DashboardLoadingPhase;
   sources: DashboardLoadingSource[];
+  range?: TimeRange;
+  progress?: DashboardLoadingProgress;
+  cache?: DashboardCacheState;
 };
 
 export type DashboardState = {
