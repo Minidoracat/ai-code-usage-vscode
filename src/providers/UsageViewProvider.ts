@@ -147,6 +147,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         locale: this.resolvedLocale(),
         localePreference: this.localePreference(),
         messages: messagesFor(this.resolvedLocale()),
+        updatedAt: new Date().toISOString(),
         autoRefreshIntervalSeconds: this.autoRefreshIntervalSeconds(),
         timeZone: this.timeZoneState(),
         summary,
@@ -167,6 +168,11 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (request.type === "refresh") {
+      await this.refresh({ allowSourcePrompt: true });
+      return;
+    }
+
+    if (request.type === "rebuildCache") {
       await this.refresh({ allowSourcePrompt: true, forceImport: true });
       return;
     }

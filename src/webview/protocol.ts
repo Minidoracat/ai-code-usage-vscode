@@ -16,6 +16,12 @@ export type WebviewRequest =
     }
   | {
       requestId: string;
+      type: "rebuildCache";
+      version: typeof webviewProtocolVersion;
+      payload?: undefined;
+    }
+  | {
+      requestId: string;
       type: "setRange";
       version: typeof webviewProtocolVersion;
       payload: {
@@ -119,6 +125,7 @@ export type DashboardState = {
   locale: string;
   localePreference: DashboardLocalePreference;
   messages: Record<string, string>;
+  updatedAt: string;
   autoRefreshIntervalSeconds: number;
   timeZone: TimeZoneState;
   summary: UsageSummary;
@@ -138,6 +145,13 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
     return {
       requestId: value["requestId"],
       type: "refresh",
+      version: webviewProtocolVersion,
+    };
+  }
+  if (value["type"] === "rebuildCache") {
+    return {
+      requestId: value["requestId"],
+      type: "rebuildCache",
       version: webviewProtocolVersion,
     };
   }

@@ -292,6 +292,28 @@ h2 {
   align-items: center;
 }
 
+.auto-refresh-status {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.auto-refresh-status span,
+.auto-refresh-status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auto-refresh-status span {
+  color: var(--muted);
+}
+
+.auto-refresh-status small {
+  color: var(--text);
+  font-size: 11px;
+}
+
 .timezone-current {
   display: grid;
   gap: 3px;
@@ -690,10 +712,38 @@ h2 {
   color: var(--provider-codex);
 }
 
+.cost-value-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
 .cost-value {
   color: var(--accent-2);
   font-weight: 650;
   white-space: nowrap;
+}
+
+.cost-value.partial {
+  text-decoration: underline dotted color-mix(in srgb, var(--accent-2) 70%, transparent);
+  text-underline-offset: 3px;
+}
+
+.partial-cost-hint {
+  display: inline-grid;
+  inline-size: 15px;
+  block-size: 15px;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 65%, transparent);
+  border-radius: 999px;
+  color: var(--accent-2);
+  cursor: help;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .usage-metric-grid {

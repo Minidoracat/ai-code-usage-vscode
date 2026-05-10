@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     }),
     vscode.commands.registerCommand("aiCodingUsage.refresh", async () => {
-      await provider.refresh({ allowSourcePrompt: true, forceImport: true });
+      await provider.refresh({ allowSourcePrompt: true });
       vscode.window.setStatusBarMessage(translate(normalizeLocale(vscode.env.language), "status.refreshed"), 2000);
     }),
     vscode.commands.registerCommand("aiCodingUsage.openDashboard", () => provider.reveal()),

@@ -7,6 +7,11 @@ test("valid refresh message passes", () => {
   assert.equal("error" in result, false);
 });
 
+test("valid rebuild cache message passes", () => {
+  const result = validateWebviewRequest({ requestId: "rebuild", type: "rebuildCache", version: webviewProtocolVersion });
+  assert.equal("error" in result, false);
+});
+
 test("valid range update message passes", () => {
   const result = validateWebviewRequest({
     requestId: "2",

@@ -246,3 +246,89 @@ test("Codex adapter imports last token usage and falls back to rollout filename 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Codex adapter backfills token usage model from a later single-model turn context", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-model-backfill-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-single-model.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:01.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 100,
+                cached_input_tokens: 80,
+                output_tokens: 12,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:02.000Z",
+          type: "turn_context",
+          payload: {
+            model: "gpt-5.5",
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0]?.model, "gpt-5.5");
+    assert.equal(result.records[0]?.tokens.input, 100);
+    assert.equal(result.records[0]?.tokens.cachedInput, 80);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter keeps early model-less token usage unknown when a file has multiple models", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-ambiguous-model-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-multiple-models.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:01.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 100,
+                output_tokens: 12,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:02.000Z",
+          type: "turn_context",
+          payload: {
+            model: "gpt-5.5",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:03.000Z",
+          type: "turn_context",
+          payload: {
+            model: "gpt-5.4-mini",
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0]?.model, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

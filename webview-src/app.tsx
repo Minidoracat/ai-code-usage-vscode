@@ -38,7 +38,7 @@ type ChartMetric = (typeof chartMetrics)[number];
 type ChartSize = (typeof chartSizes)[number];
 type PendingRequest = {
   requestId: string;
-  type: "refresh" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone";
+  type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone";
   rangeKind?: TimeRangeKind;
   provider?: UsageProviderFilter;
   locale?: DashboardLocalePreference;
@@ -119,7 +119,7 @@ function Dashboard() {
 
   const translate = (key: string) => messages[key] ?? key;
   const send = (
-    type: "refresh" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone",
+    type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone",
     payload?: unknown,
     pending?: Omit<PendingRequest, "requestId" | "type">,
   ) => {
@@ -219,6 +219,16 @@ function Dashboard() {
           >
             <RefreshIcon />
           </button>
+          <button
+            class="icon-button"
+            type="button"
+            title={translate("action.rebuildCache")}
+            aria-label={translate("action.rebuildCache")}
+            disabled={isPending}
+            onClick={() => send("rebuildCache")}
+          >
+            <RebuildCacheIcon />
+          </button>
           <button class="icon-button" type="button" title={translate("action.openSettings")} aria-label={translate("action.openSettings")} onClick={openSettings}>
             <SettingsIcon />
           </button>
@@ -315,7 +325,12 @@ function Dashboard() {
           </div>
         </div>
         <div class="auto-refresh-row" aria-label={translate("refresh.auto")}>
-          <span>{translate("refresh.auto")}</span>
+          <div class="auto-refresh-status">
+            <span>{translate("refresh.auto")}</span>
+            <small>
+              {translate("refresh.lastUpdated")}: {formatDateTime(state.updatedAt, locale, timeZone.resolvedTimeZone)}
+            </small>
+          </div>
           <div class="auto-refresh-controls">
             <div class="auto-refresh-options" role="group" aria-label={translate("refresh.auto")}>
               {autoRefreshIntervals.map((intervalSeconds) => (
@@ -615,7 +630,7 @@ function SummaryUsagePanel(props: { summary: UsageSummary; locale: string; trans
     <section class="panel summary-card" aria-label={translate("section.summary")}>
       <div class="model-usage-header">
         <h2>{translate("section.summary")}</h2>
-        <span class="cost-value">{formatSummaryCost(summary, locale, translate)}</span>
+        <CostValue cost={summary.totals.cost} text={formatSummaryCost(summary, locale, translate)} locale={locale} translate={translate} />
       </div>
       <dl class="usage-metric-grid summary-metric-grid">
         <UsageMetric label={translate("metric.totalTokens")} value={formatNumber(tokenSum(summary.totals.tokens), locale)} />
@@ -648,7 +663,7 @@ function ModelUsagePanel(props: { summary: UsageSummary; locale: string; transla
           <article class={classNames("model-usage-card", `provider-${model.provider}`)} key={`${model.provider}-${model.model}`}>
             <div class="model-usage-header">
               <strong title={model.model}>{model.model}</strong>
-              <span class="cost-value">{formatCost(model.cost, locale, translate)}</span>
+              <CostValue cost={model.cost} locale={locale} translate={translate} />
             </div>
             <UsageMetricGrid tokens={model.tokens} records={model.records} locale={locale} translate={translate} />
           </article>
@@ -680,11 +695,32 @@ function UsageMetric(props: { label: string; value: string }) {
   );
 }
 
+function CostValue(props: {
+  cost: UsageCost | undefined;
+  text?: string;
+  locale: string;
+  translate: (key: string) => string;
+}) {
+  const hint = props.cost?.note === "partial" ? props.translate("tooltip.partialCost") : undefined;
+  const text = props.text ?? formatCost(props.cost, props.locale, props.translate);
+  return (
+    <span class="cost-value-wrap" title={hint}>
+      <span class={classNames("cost-value", hint && "partial")}>{text}</span>
+      {hint ? (
+        <span class="partial-cost-hint" aria-label={hint}>
+          i
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function TrendChart(props: { summary: UsageSummary; metric: ChartMetric; locale: string; translate: (key: string) => string; size: ChartSize }) {
   const { summary, metric, locale, translate, size } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot>();
   const data = useMemo(() => trendData(summary, metric), [summary, metric]);
+  const xRange = useMemo(() => trendDateRange(summary), [summary]);
   const hasData = data[0].length > 0;
 
   useEffect(() => {
@@ -701,7 +737,7 @@ function TrendChart(props: { summary: UsageSummary; metric: ChartMetric; locale:
         height,
         legend: { show: false },
         cursor: { drag: { setScale: false } },
-        scales: { x: { time: true } },
+        scales: { x: { time: true, range: () => xRange } },
         series: [
           {},
           {
@@ -743,7 +779,7 @@ function TrendChart(props: { summary: UsageSummary; metric: ChartMetric; locale:
       chartRef.current?.destroy();
       chartRef.current = undefined;
     };
-  }, [data, hasData, locale, metric, size, translate]);
+  }, [data, hasData, locale, metric, size, translate, xRange]);
 
   if (!hasData) {
     return <div class="chart-empty">{translate("empty.title")}</div>;
@@ -804,14 +840,18 @@ function SessionTable(props: { summary: UsageSummary; locale: string; translate:
                 <td>{formatDate(session.startedAt, locale, summary.range.timeZone.resolvedTimeZone)}</td>
                 <td>{formatDate(session.endedAt, locale, summary.range.timeZone.resolvedTimeZone)}</td>
                 <td class="numeric">{formatDuration(session.startedAt, session.endedAt, translate)}</td>
-                <td>{formatCost(session.cost, locale, translate)}</td>
+                <td>
+                  <CostValue cost={session.cost} locale={locale} translate={translate} />
+                </td>
                 <td class="numeric">{formatNumber(session.records, locale)}</td>
                 <td class="numeric">{formatNumber(totalTokens, locale)}</td>
                 <td class="numeric">{formatNumber(inputTokens(session.tokens), locale)}</td>
                 <td class="numeric">{formatNumber(outputTokens(session.tokens), locale)}</td>
                 <td class="numeric">{formatNumber(cacheCreateTokens(session.tokens), locale)}</td>
                 <td class="numeric">{formatNumber(cacheReadTokens(session.tokens), locale)}</td>
-                <td class="numeric">{formatCostPerMessage(session.cost, session.records, locale, translate)}</td>
+                <td class="numeric">
+                  <CostValue cost={session.cost} text={formatCostPerMessage(session.cost, session.records, locale, translate)} locale={locale} translate={translate} />
+                </td>
                 <td class="numeric">{formatAverage(totalTokens, session.records, locale)}</td>
                 <td class="numeric">{formatPercent(cacheReadTokens(session.tokens), totalTokens, locale)}</td>
               </tr>
@@ -909,6 +949,15 @@ function trendData(summary: UsageSummary, metric: ChartMetric): uPlot.AlignedDat
     .sort((left, right) => left.x - right.x);
 
   return [points.map((point) => point.x), points.map((point) => point.y)];
+}
+
+function trendDateRange(summary: UsageSummary): [number | null, number | null] {
+  const start = dateKeyTimestamp(summary.range.startDate);
+  const end = dateKeyTimestamp(summary.range.endDate);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return [null, null];
+  }
+  return [start, end + 86_400];
 }
 
 function chartLabel(metric: ChartMetric, translate: (key: string) => string): string {
@@ -1048,6 +1097,24 @@ function formatDate(value: string | undefined, locale: string, timeZone: string)
     return value.slice(0, 10);
   }
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", timeZone }).format(date);
+}
+
+function formatDateTime(value: string | undefined, locale: string, timeZone: string): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone,
+  }).format(date);
 }
 
 function formatDuration(start: string | undefined, end: string | undefined, translate: (key: string) => string): string {
@@ -1849,6 +1916,17 @@ function RefreshIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M20 12a8 8 0 0 1-13.6 5.7M4 12A8 8 0 0 1 17.6 6.3M17 3v4h4M7 21v-4H3" />
+    </svg>
+  );
+}
+
+function RebuildCacheIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 6c0-2 3.6-3 8-3s8 1 8 3-3.6 3-8 3-8-1-8-3Z" />
+      <path d="M4 6v5c0 1.3 2 2.3 5 2.7M20 6v4M4 11v5c0 1.2 1.7 2.1 4.4 2.6" />
+      <path d="M18.2 14.2A4 4 0 1 1 14 13.1" />
+      <path d="M18 11v3.2h3.2" />
     </svg>
   );
 }

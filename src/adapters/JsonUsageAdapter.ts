@@ -11,11 +11,12 @@ import type {
   UsageRecord,
 } from "../domain/types";
 
-export const jsonUsageParserVersion = "local-json-v2";
+export const jsonUsageParserVersion = "local-json-v3";
 const maxDirectoryDepth = 6;
 const maxFilesPerSource = 10_000;
 const directoryReadConcurrency = 8;
 const fileStatConcurrency = 32;
+const modelContextPaths = ["model", "message.model", "response.model", "payload.model", "payload.collaboration_mode.settings.model"];
 
 export type UsageFileRef = {
   filePath: string;
@@ -202,7 +203,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       if (rows.length === 0) {
         result.warnings.push(issue("warning", "no_records", "JSON source did not contain usage records.", filePath, this.provider));
       }
-      const context = createFileContext(filePath);
+      const context = createFileContext(filePath, inferSingleModel(rows));
       rows.forEach((row, index) => {
         this.addRecord(row, filePath, meta, result, index + 1, context);
       });
@@ -213,16 +214,23 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
 
   private readJsonLines(content: string, filePath: string, meta: SourceMeta, result: AdapterImportResult): void {
     const lines = content.split(/\r?\n/);
-    const context = createFileContext(filePath);
+    const rows: Array<{ line: number; row: unknown }> = [];
     lines.forEach((line, index) => {
       if (!line.trim()) {
         return;
       }
       try {
-        this.addRecord(JSON.parse(line) as unknown, filePath, meta, result, index + 1, context);
+        rows.push({ line: index + 1, row: JSON.parse(line) as unknown });
       } catch (error) {
         result.errors.push(issue("error", "malformed_jsonl", errorMessage(error), filePath, this.provider, index + 1));
       }
+    });
+    const context = createFileContext(
+      filePath,
+      inferSingleModel(rows.map((entry) => entry.row)),
+    );
+    rows.forEach(({ line, row }) => {
+      this.addRecord(row, filePath, meta, result, line, context);
     });
   }
 
@@ -242,7 +250,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
 
     updateFileContext(context, object);
     const tokens = normalizeTokens(object);
-    const model = firstString(object, ["model", "message.model", "response.model", "payload.model"]) ?? context.model;
+    const model = firstString(object, modelContextPaths) ?? context.model;
     const cost = normalizeCost(object);
     const hasUsageSignal = hasNonZeroTokenUsage(tokens) || Boolean(cost);
     if (!hasUsageSignal) {
@@ -336,15 +344,16 @@ type FileContext = {
   model?: string;
 };
 
-function createFileContext(filePath: string): FileContext {
+function createFileContext(filePath: string, model?: string): FileContext {
   const extension = path.extname(filePath);
   return {
+    model,
     sessionId: path.basename(filePath, extension),
   };
 }
 
 function updateFileContext(context: FileContext, object: Record<string, unknown>): void {
-  const model = firstString(object, ["model", "message.model", "response.model", "payload.model", "payload.collaboration_mode.settings.model"]);
+  const model = firstString(object, modelContextPaths);
   if (model) {
     context.model = model;
   }
@@ -352,6 +361,24 @@ function updateFileContext(context: FileContext, object: Record<string, unknown>
   if (sessionId) {
     context.sessionId = sessionId;
   }
+}
+
+function inferSingleModel(rows: unknown[]): string | undefined {
+  const models = new Set<string>();
+  for (const row of rows) {
+    const object = asObject(row);
+    if (!object) {
+      continue;
+    }
+    const model = firstString(object, modelContextPaths);
+    if (model) {
+      models.add(model);
+      if (models.size > 1) {
+        return undefined;
+      }
+    }
+  }
+  return [...models][0];
 }
 
 function normalizeCost(object: Record<string, unknown>) {
