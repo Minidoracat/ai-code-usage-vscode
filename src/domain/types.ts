@@ -155,6 +155,8 @@ export type PricingRule = {
   priceUnit: "per_1m_tokens";
   sourceUrl: string;
   checkedAt: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
   rates: Partial<Record<TokenCategory, number>>;
 };
 
@@ -171,6 +173,6 @@ export type CostEstimate =
     }
   | {
       available: false;
-      reason: "unknown_model" | "missing_tokens" | "stale_pricing" | "missing_pricing_metadata";
+      reason: "unknown_model" | "missing_tokens" | "missing_pricing_metadata";
       importedCost?: UsageCost;
     };

@@ -9,12 +9,28 @@ for (const catalogPath of catalogPaths) {
   if (!catalog.checkedAt || !Array.isArray(catalog.sourceUrls) || catalog.sourceUrls.length === 0) {
     failures.push(`${catalogPath} must include checkedAt and sourceUrls.`);
   }
+  if (!Array.isArray(catalog.rules) || catalog.rules.length === 0) {
+    failures.push(`${catalogPath} must include at least one pricing rule.`);
+    continue;
+  }
 
-  for (const [index, rule] of (catalog.rules ?? []).entries()) {
+  for (const [index, rule] of catalog.rules.entries()) {
     for (const field of ["provider", "model", "modelAliases", "currency", "priceUnit", "sourceUrl", "checkedAt", "rates"]) {
       if (rule[field] === undefined) {
         failures.push(`${catalogPath} pricing rule ${index} missing ${field}`);
       }
+    }
+    for (const field of ["effectiveFrom", "effectiveTo"]) {
+      if (rule[field] !== undefined && (typeof rule[field] !== "string" || Number.isNaN(new Date(rule[field]).getTime()))) {
+        failures.push(`${catalogPath} pricing rule ${index} has invalid ${field}`);
+      }
+    }
+    if (
+      rule.effectiveFrom !== undefined &&
+      rule.effectiveTo !== undefined &&
+      new Date(rule.effectiveFrom).getTime() >= new Date(rule.effectiveTo).getTime()
+    ) {
+      failures.push(`${catalogPath} pricing rule ${index} effectiveFrom must be before effectiveTo`);
     }
   }
 }
