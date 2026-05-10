@@ -164,8 +164,9 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "clean": "node scripts/clean-out.mjs",
     "build:webview": "esbuild webview-src/app.tsx --bundle --format=iife --platform=browser --target=es2020 --jsx=automatic --jsx-import-source=preact --outfile=media/main.js",
-    "compile": "npm run build:webview && tsc -p ./",
+    "compile": "npm run clean && npm run build:webview && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run check:test-data && npm run compile && node --test out/test/**/*.test.js",
     "check:i18n": "node scripts/check-i18n.mjs",
