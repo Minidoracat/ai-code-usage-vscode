@@ -3,15 +3,19 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type {
+  PricingCatalog,
+  PricingRule,
   TimeRangeKind,
   TimeZoneMode,
   TokenBreakdown,
+  TokenCategory,
   UsageCost,
   UsageProvider,
   UsageProviderFilter,
   UsageSummary,
 } from "../src/domain/types";
 import { timeRangeKinds } from "../src/domain/timeRange";
+import { findPricingRule } from "../src/services/PricingService";
 import {
   webviewProtocolVersion,
   type DashboardLoadingPhase,
@@ -33,6 +37,14 @@ const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
 const chartMetrics = ["cost", "input", "output", "cacheWrite", "cacheRead", "records"] as const;
 const chartSizes = ["compact", "comfortable", "expanded"] as const;
 const autoRefreshIntervals = [0, 60, 300, 900, 1800] as const;
+const pricingRateCategories: Array<{ category: Exclude<TokenCategory, "unknown">; labelKey: string }> = [
+  { category: "input", labelKey: "metric.inputTokens" },
+  { category: "output", labelKey: "metric.outputTokens" },
+  { category: "cachedInput", labelKey: "pricing.cachedInput" },
+  { category: "cacheWrite5m", labelKey: "pricing.cacheWrite5m" },
+  { category: "cacheWrite1h", labelKey: "pricing.cacheWrite1h" },
+  { category: "cacheRead", labelKey: "metric.cacheRead" },
+];
 
 type ChartMetric = (typeof chartMetrics)[number];
 type ChartSize = (typeof chartSizes)[number];
@@ -388,6 +400,7 @@ function Dashboard() {
       {hasRecords ? (
         <DataPanels
           summary={summary}
+          pricing={state.pricing}
           locale={locale}
           translate={translate}
           chartMetric={chartMetric}
@@ -396,7 +409,10 @@ function Dashboard() {
           setChartSize={setChartSize}
         />
       ) : (
-        <EmptyState title={translate("empty.title")} body={translate("empty.body")} />
+        <>
+          <EmptyState title={translate("empty.title")} body={translate("empty.body")} />
+          <PricingRulesPanel pricing={state.pricing} locale={locale} translate={translate} />
+        </>
       )}
 
       <footer class="privacy">{translate("state.localOnly")}</footer>
@@ -551,6 +567,7 @@ function formatLoadingRange(range: NonNullable<DashboardLoadingState["range"]>, 
 
 function DataPanels(props: {
   summary: UsageSummary;
+  pricing: PricingCatalog;
   locale: string;
   translate: (key: string) => string;
   chartMetric: ChartMetric;
@@ -558,7 +575,7 @@ function DataPanels(props: {
   chartSize: ChartSize;
   setChartSize: (size: ChartSize) => void;
 }) {
-  const { summary, locale, translate, chartMetric, setChartMetric, chartSize, setChartSize } = props;
+  const { summary, pricing, locale, translate, chartMetric, setChartMetric, chartSize, setChartSize } = props;
   const chartSizeIndex = chartSizes.indexOf(chartSize);
 
   return (
@@ -610,7 +627,9 @@ function DataPanels(props: {
         </div>
       </article>
 
-      <ModelUsagePanel summary={summary} locale={locale} translate={translate} />
+      <ModelUsagePanel summary={summary} pricing={pricing} locale={locale} translate={translate} />
+
+      <PricingRulesPanel pricing={pricing} locale={locale} translate={translate} />
 
       <section class="panel">
         <div class="panel-heading">
@@ -646,12 +665,13 @@ function SummaryUsagePanel(props: { summary: UsageSummary; locale: string; trans
   );
 }
 
-function ModelUsagePanel(props: { summary: UsageSummary; locale: string; translate: (key: string) => string }) {
-  const { summary, locale, translate } = props;
+function ModelUsagePanel(props: { summary: UsageSummary; pricing: PricingCatalog; locale: string; translate: (key: string) => string }) {
+  const { summary, pricing, locale, translate } = props;
   const models = summary.modelSplit.slice(0, 12);
   if (models.length === 0) {
     return null;
   }
+  const pricingInstant = validDateOrUndefined(summary.range.end);
 
   return (
     <section class="panel model-usage-panel">
@@ -659,17 +679,90 @@ function ModelUsagePanel(props: { summary: UsageSummary; locale: string; transla
         <h2>{translate("section.models")}</h2>
       </div>
       <div class="model-usage-list">
-        {models.map((model) => (
-          <article class={classNames("model-usage-card", `provider-${model.provider}`)} key={`${model.provider}-${model.model}`}>
-            <div class="model-usage-header">
-              <strong title={model.model}>{model.model}</strong>
-              <CostValue cost={model.cost} locale={locale} translate={translate} />
+        {models.map((model) => {
+          const pricingRule = findPricingRule(pricing.rules, model.provider, model.model, pricingInstant);
+          return (
+            <article class={classNames("model-usage-card", `provider-${model.provider}`)} key={`${model.provider}-${model.model}`}>
+              <div class="model-usage-header">
+                <div class="model-title-stack">
+                  <strong title={model.model}>{model.model}</strong>
+                  <PricingSummary rule={pricingRule} locale={locale} translate={translate} />
+                </div>
+                <CostValue cost={model.cost} locale={locale} translate={translate} />
+              </div>
+              <UsageMetricGrid tokens={model.tokens} records={model.records} locale={locale} translate={translate} />
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; translate: (key: string) => string }) {
+  const { pricing, locale, translate } = props;
+  return (
+    <details class="panel pricing-panel" aria-label={translate("section.pricing")}>
+      <summary class="panel-heading pricing-heading">
+        <div>
+          <h2>{translate("section.pricing")}</h2>
+          <p>{translate("pricing.formula")}</p>
+        </div>
+        <span class="pricing-catalog-meta" title={pricing.sourceUrls.join("\n")}>
+          {translate("pricing.catalogCheckedAt")}: {formatDateTime(pricing.checkedAt, locale, "UTC")}
+        </span>
+      </summary>
+      <div class="pricing-rule-list">
+        {pricing.rules.map((rule) => (
+          <article class={classNames("pricing-rule-card", `provider-${rule.provider}`)} key={`${rule.provider}-${rule.model}`}>
+            <div class="pricing-rule-header">
+              <div>
+                <strong title={rule.model}>{rule.model}</strong>
+                <ProviderBadge provider={rule.provider} />
+              </div>
+              <span title={pricingRuleTooltip(rule, locale, translate)}>{translate("pricing.perMillionTokens")}</span>
             </div>
-            <UsageMetricGrid tokens={model.tokens} records={model.records} locale={locale} translate={translate} />
+            <div class="pricing-rate-grid">
+              {pricingRateEntries(rule).map(({ category, rate }) => (
+                <UsageMetric
+                  key={category}
+                  label={translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown")}
+                  value={formatPricingRate(rate, rule.currency, locale)}
+                />
+              ))}
+            </div>
+            <div class="pricing-rule-meta">
+              <span title={rule.sourceUrl}>
+                {translate("pricing.source")}: {sourceHost(rule.sourceUrl)}
+              </span>
+              <span>
+                {translate("pricing.checkedAt")}: {formatDateTime(rule.checkedAt, locale, "UTC")}
+              </span>
+              <span title={rule.modelAliases.join(", ")}>
+                {translate("pricing.aliases")}: {formatAliases(rule.modelAliases, translate)}
+              </span>
+            </div>
           </article>
         ))}
       </div>
-    </section>
+    </details>
+  );
+}
+
+function PricingSummary(props: { rule: PricingRule | undefined; locale: string; translate: (key: string) => string }) {
+  const { rule, locale, translate } = props;
+  if (!rule) {
+    return (
+      <span class="pricing-summary missing" title={translate("pricing.tooltip.unmatched")}>
+        {translate("pricing.unmatched")}
+      </span>
+    );
+  }
+
+  return (
+    <span class="pricing-summary" title={pricingRuleTooltip(rule, locale, translate)}>
+      {formatPricingBadge(rule, locale, translate)}
+    </span>
   );
 }
 
@@ -1068,6 +1161,81 @@ function formatSummaryCost(summary: UsageSummary, locale: string, translate: (ke
     formatCost({ amount, currency, source: "calculated" }, locale, translate),
   );
   return parts.length > 0 ? parts.join(" / ") : translate("state.unavailable");
+}
+
+function pricingRateEntries(rule: PricingRule): Array<{ category: Exclude<TokenCategory, "unknown">; rate: number }> {
+  return pricingRateCategories.flatMap((entry) => {
+    const rate = rule.rates[entry.category];
+    return typeof rate === "number" ? [{ category: entry.category, rate }] : [];
+  });
+}
+
+function formatPricingBadge(rule: PricingRule, locale: string, translate: (key: string) => string): string {
+  const parts: string[] = [];
+  if (typeof rule.rates.input === "number") {
+    parts.push(`${translate("pricing.shortInput")} ${formatRateAmount(rule.rates.input, locale)}`);
+  }
+  if (typeof rule.rates.output === "number") {
+    parts.push(`${translate("pricing.shortOutput")} ${formatRateAmount(rule.rates.output, locale)}`);
+  }
+  const cacheRate = rule.rates.cachedInput ?? rule.rates.cacheRead;
+  if (typeof cacheRate === "number") {
+    parts.push(`${translate("pricing.shortCache")} ${formatRateAmount(cacheRate, locale)}`);
+  }
+  return `${rule.currency}/1M${parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}`;
+}
+
+function pricingRuleTooltip(rule: PricingRule, locale: string, translate: (key: string) => string): string {
+  const lines = [
+    `${rule.model} · ${rule.provider}`,
+    `${translate("pricing.unit")}: ${translate("pricing.perMillionTokens")}`,
+    ...pricingRateEntries(rule).map(({ category, rate }) => {
+      const label = translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown");
+      return `${label}: ${formatPricingRate(rate, rule.currency, locale)}`;
+    }),
+    `${translate("pricing.checkedAt")}: ${formatDateTime(rule.checkedAt, locale, "UTC")}`,
+    `${translate("pricing.source")}: ${rule.sourceUrl}`,
+  ];
+  if (rule.effectiveFrom || rule.effectiveTo) {
+    lines.push(
+      `${translate("pricing.effective")}: ${rule.effectiveFrom ? formatDateTime(rule.effectiveFrom, locale, "UTC") : "∞"} - ${
+        rule.effectiveTo ? formatDateTime(rule.effectiveTo, locale, "UTC") : "∞"
+      }`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function formatPricingRate(rate: number, currency: string, locale: string): string {
+  return `${currency} ${formatRateAmount(rate, locale)}`;
+}
+
+function formatRateAmount(rate: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: rate < 1 ? 4 : 2 }).format(rate);
+}
+
+function formatAliases(aliases: string[], translate: (key: string) => string): string {
+  if (aliases.length === 0) {
+    return translate("pricing.noAliases");
+  }
+  const visible = aliases.slice(0, 3).join(", ");
+  return aliases.length > 3 ? `${visible} +${aliases.length - 3}` : visible;
+}
+
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function validDateOrUndefined(value: string | undefined): Date | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function formatNumber(value: number | undefined, locale: string): string {

@@ -150,6 +150,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         updatedAt: new Date().toISOString(),
         autoRefreshIntervalSeconds: this.autoRefreshIntervalSeconds(),
         timeZone: this.timeZoneState(),
+        pricing: pricingCatalog as PricingCatalog,
         summary,
       },
     });

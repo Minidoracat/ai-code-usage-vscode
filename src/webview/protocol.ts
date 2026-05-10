@@ -1,4 +1,13 @@
-import type { TimeRange, TimeRangeKind, TimeZoneMode, TimeZoneState, UsageProvider, UsageProviderFilter, UsageSummary } from "../domain/types";
+import type {
+  PricingCatalog,
+  TimeRange,
+  TimeRangeKind,
+  TimeZoneMode,
+  TimeZoneState,
+  UsageProvider,
+  UsageProviderFilter,
+  UsageSummary,
+} from "../domain/types";
 import { isTimeRangeKind } from "../domain/timeRange";
 import { isValidAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { isTimeZoneMode, isValidTimeZone } from "../services/TimeZoneService";
@@ -128,6 +137,7 @@ export type DashboardState = {
   updatedAt: string;
   autoRefreshIntervalSeconds: number;
   timeZone: TimeZoneState;
+  pricing: PricingCatalog;
   summary: UsageSummary;
 };
 
