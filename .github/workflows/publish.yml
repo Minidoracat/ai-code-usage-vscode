@@ -1,9 +1,9 @@
 name: Publish
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,14 +23,18 @@ on:
           - "false"
           - "true"
 
+permissions:
+  contents: read
+
 concurrency:
   group: marketplace-publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  package:
+  release-gate:
     name: Release gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -45,38 +49,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Check release version
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == 'false')
+        run: npm run check:release-version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
 
-      - name: Check i18n
-        run: npm run check:i18n
-
-      - name: Check privacy
-        run: npm run check:privacy
-
-      - name: Check pricing
-        run: npm run check:pricing
-
-      - name: Check test data
-        run: npm run check:test-data
-
-      - name: Package VSIX
-        run: npm run package:vsix
-
-      - name: Inspect VSIX
-        run: npm run inspect:vsix
+      - name: Run release gate
+        run: npm run release:gate
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-code-usage-vsix
-          path: "*.vsix"
+          path: ai-code-usage-*.vsix
           if-no-files-found: error
+          retention-days: 30
 
   dry-run:
     name: Dry run result
     runs-on: ubuntu-latest
-    needs: package
+    needs: release-gate
     if: github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true'
 
     steps:
@@ -86,9 +79,10 @@ jobs:
   publish:
     name: Publish to Visual Studio Marketplace
     runs-on: ubuntu-latest
-    needs: package
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == 'false' && inputs.confirm_publish == 'true')
+    needs: release-gate
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == 'false' && inputs.confirm_publish == 'true')
     environment: marketplace-production
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -103,8 +97,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Preflight version
-        run: node -e "const p=require('./package.json'); if (!/^\\d+\\.\\d+\\.\\d+$/.test(p.version)) throw new Error('package.json version must be SemVer'); console.log('Publishing version', p.version);"
+      - name: Check release version
+        run: npm run check:release-version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
 
       - name: Require Marketplace token
         run: |

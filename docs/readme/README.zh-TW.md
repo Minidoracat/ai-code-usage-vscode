@@ -111,20 +111,6 @@ npm run inspect:vsix
 
 dashboard webview 使用 `Preact`、`uPlot` 與 `esbuild`。runtime assets 會 package 到 `media/main.js` 與 `media/main.css`；extension runtime 不會載入外部 web assets。
 
-## 發布
-
-發布準備流程記錄於 [docs/release.md](../release.md)。
-
-發布需要：
-
-- Marketplace publisher ID：`minidoracat`
-- Azure DevOps Personal Access Token，scope 為 Marketplace `Manage`
-- GitHub environment：`marketplace-production`
-- Environment secret：`VSCE_PAT`
-- 明確的 GitHub Release，或帶有 explicit publish confirmation 的 manual workflow dispatch
-
-publish workflow 會在發布前重新執行所有 release gates。它不能用來跳過本機測試或手動 Marketplace checklist。
-
 ## 支援
 
 請見 [SUPPORT.md](../../SUPPORT.md) 了解支援與 issue 回報方式。

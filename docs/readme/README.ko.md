@@ -111,20 +111,6 @@ fixture만 사용해 테스트하려면 다음을 설정하세요.
 
 dashboard webview는 `Preact`, `uPlot`, `esbuild`를 사용합니다. runtime assets는 `media/main.js`와 `media/main.css`로 package됩니다. extension runtime은 외부 web assets를 로드하지 않습니다.
 
-## 릴리스
-
-릴리스 준비는 [docs/release.md](../release.md)에 문서화되어 있습니다.
-
-게시에는 다음이 필요합니다.
-
-- Marketplace publisher ID: `minidoracat`
-- Marketplace `Manage` scope가 있는 Azure DevOps Personal Access Token
-- GitHub environment: `marketplace-production`
-- Environment secret: `VSCE_PAT`
-- 명시적인 GitHub Release 또는 explicit publish confirmation이 포함된 manual workflow dispatch
-
-publish workflow는 게시 전에 모든 release gates를 다시 실행하도록 설계되어 있습니다. 로컬 테스트나 수동 Marketplace checklist를 건너뛰는 용도로 사용하면 안 됩니다.
-
 ## 지원
 
 지원 및 issue 보고 방법은 [SUPPORT.md](../../SUPPORT.md)를 참고하세요.

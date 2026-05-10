@@ -173,9 +173,13 @@
     "check:privacy": "node scripts/check-privacy.mjs",
     "check:pricing": "node scripts/check-pricing.mjs",
     "check:test-data": "node scripts/check-test-data.mjs",
+    "check:audit": "npm audit",
+    "check:audit:runtime": "npm audit --omit=dev",
+    "check:release-version": "node scripts/check-release-version.mjs",
     "inspect:vsix": "node scripts/inspect-vsix.mjs",
     "package:vsix": "npm run compile && npm run check:i18n && npm run check:privacy && npm run check:pricing && npm run check:test-data && npx @vscode/vsce package --no-dependencies",
-    "deploy": "vsce publish --no-dependencies"
+    "release:gate": "npm test && npm run check:i18n && npm run check:privacy && npm run check:pricing && npm run check:test-data && npm run check:audit && npm run check:audit:runtime && npm run package:vsix && npm run inspect:vsix",
+    "deploy": "npx @vscode/vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

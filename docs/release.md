@@ -1,102 +1,135 @@
-# Release Checklist
+# 發布流程
 
-This document describes how to prepare and publish `AI Coding Usage` without leaking local usage data or bypassing release gates.
+這份文件定義 `AI Coding Usage` 的正式發布流程。目標是讓 Marketplace 版本、GitHub commit、Git tag、`.vsix` artifact 與 `package.json` version 可以精準對齊，同時避免本機 usage data、PAT 或未驗證 build 被發布出去。
 
-## Release Model
+## 發布模型
 
-The repository is prepared for a release-ready dry run first. A real Marketplace publish requires explicit manual setup and confirmation.
-
-The workflow must not publish from ordinary pushes or pull requests.
-
-## One-Time Marketplace Setup
-
-1. Create or verify the Visual Studio Marketplace publisher:
-   - Publisher ID: `minidoracat`
-   - The publisher ID is written to `package.json` and is used in Marketplace URLs.
-2. Create an Azure DevOps Personal Access Token:
-   - Scope: Marketplace `Manage`
-   - Store it securely. Do not commit it.
-3. Verify the publisher locally if needed:
-
-```bash
-npx @vscode/vsce login minidoracat
-```
-
-## GitHub Environment Setup
-
-Create a GitHub environment named:
+正式發布只走 `vX.Y.Z` tag：
 
 ```text
-marketplace-production
+package.json version 0.1.1 -> git tag v0.1.1 -> GitHub Actions -> vsce publish
 ```
 
-Recommended protection:
+一般 `push`、pull request、或 GitHub Release metadata 不會直接發布到 Marketplace。GitHub Release 可以在 tag 發布成功後建立，用來放 release notes 或 `.vsix` artifact，但不是主要觸發點。
 
-- Required reviewers enabled
-- Prevent self-review enabled when available
-- Deployment branch/tag policy restricted to release tags or release branches
-- `VSCE_PAT` stored as an environment secret, not a repository file
+## 一次性設定
 
-Important: a workflow that references an environment name does not prove that protection rules are configured. Confirm the environment settings in GitHub UI and keep a manual record or screenshot before the first real publish.
+Marketplace publisher：
 
-## Local Release Dry Run
+- Publisher ID：`minidoracat`
+- Extension ID：`minidoracat.ai-code-usage`
+- `package.json` 的 `publisher` 必須維持 `minidoracat`
 
-Run:
+Azure DevOps PAT：
+
+- 建議命名：`vsce-ai-code-usage`
+- Organization：All accessible organizations，或至少包含 `minidoracat`
+- Scope：Marketplace `Manage`
+- 到期日：依個人安全策略設定，建議不要無限期
+- 不要提交到 repo，不要寫進 workflow YAML
+
+GitHub environment：
+
+- 建立 environment：`marketplace-production`
+- 在 environment secrets 放入：`VSCE_PAT`
+- 建議啟用 required reviewers
+- 建議限制 deployment branches/tags，只允許 `v*` release tag
+
+官方參考：
+
+- VS Code publishing：`https://code.visualstudio.com/api/working-with-extensions/publishing-extension`
+- VS Code CI / automated publishing：`https://code.visualstudio.com/api/working-with-extensions/continuous-integration`
+
+## 本機發布前檢查
+
+發布前先確認 working tree 乾淨，並跑完整 gate：
+
+```bash
+git status --short
+npm ci
+npm run release:gate
+```
+
+`release:gate` 會執行：
+
+- `npm test`
+- `npm run check:i18n`
+- `npm run check:privacy`
+- `npm run check:pricing`
+- `npm run check:test-data`
+- `npm run check:audit`
+- `npm run check:audit:runtime`
+- `npm run package:vsix`
+- `npm run inspect:vsix`
+
+`.vsix` 必須通過 inspection，不得包含本機 `.claude` / `.codex` usage data、測試 raw fixtures、OMX runtime state、PAT 或其他 private artifacts。
+
+## 發布版本
+
+1. 更新 `package.json` 的 `version`。
+2. 更新 `CHANGELOG.md`，讓該版本不再是 `Pending release`。
+3. 跑本機 gate：
 
 ```bash
 npm ci
-npm test
-npm run check:i18n
-npm run check:privacy
-npm run check:pricing
-npm run check:test-data
-npm run package:vsix
-npm run inspect:vsix
+npm run release:gate
 ```
 
-The `.vsix` must not contain source files, tests, local state, raw fixtures, or assistant/runtime configuration.
-
-## GitHub Actions
-
-`ci.yml` runs on pull requests and pushes to `main`. It must not read `VSCE_PAT` or call `vsce publish`.
-
-`publish.yml` reruns all release gates in the same workflow. Real publish is locked behind:
-
-- Release event or explicit manual dispatch
-- Successful package and VSIX inspection job
-- `environment: marketplace-production`
-- `VSCE_PAT` environment secret
-- Explicit confirmation input for manual publish
-- Concurrency lock
-
-Manual dry runs must not read `VSCE_PAT` and must not call `vsce publish`.
-
-## First Publish
-
-Before the first real publish:
-
-- Confirm `package.json` version.
-- Confirm `CHANGELOG.md` describes that version.
-- Confirm screenshots, if present, use synthetic fixture data.
-- Confirm Marketplace publisher `minidoracat` exists and belongs to you.
-- Confirm `VSCE_PAT` has Marketplace `Manage` scope.
-- Confirm the GitHub environment protection settings.
-
-If the first publish partially succeeds and Marketplace accepts the version, do not reuse the same version. Bump `patch` or follow Marketplace recovery guidance based on the actual Marketplace state.
-
-## Commands
-
-Package only:
+4. Commit 版本變更。
+5. 建立 annotated tag，tag 必須等於 `v${package.json.version}`：
 
 ```bash
-npm run package:vsix
-npm run inspect:vsix
+git tag -a v0.1.1 -m "v0.1.1: 發布摘要"
 ```
 
-Publish from a prepared environment:
+6. 推送 commit 與 tag：
 
 ```bash
-npm run deploy
+git push origin main
+git push origin v0.1.1
 ```
 
-Do not run `npm run deploy` unless the Marketplace publisher, PAT, and release checklist are ready.
+7. GitHub Actions `Publish` workflow 會自動執行：
+   - 安裝依賴
+   - 檢查 tag/version 是否一致
+   - 跑完整 `release:gate`
+   - 上傳 `.vsix` artifact
+   - 進入 `marketplace-production` environment
+   - 使用 `VSCE_PAT` 執行 `npm run deploy`
+
+## 手動 dry run
+
+可在 GitHub Actions 手動執行 `Publish` workflow：
+
+- `dry_run=true`
+- `confirm_publish=false`
+
+這會跑完整 gate、產生 artifact，但不讀取 `VSCE_PAT`，也不發布。
+
+## 手動發布
+
+只有在 tag pipeline 失敗但 Marketplace 尚未接受該版本時才使用。
+
+GitHub Actions 手動 dispatch 必須：
+
+- 選擇 `vX.Y.Z` tag ref
+- `dry_run=false`
+- `confirm_publish=true`
+
+workflow 仍會檢查 tag/version 是否一致，並要求 `marketplace-production` environment approval。
+
+## 版本失敗與回復
+
+如果 Marketplace 已接受某個 version，就不要重複發布同一個 version。請 bump patch，例如從 `0.1.1` 改成 `0.1.2`。
+
+如果需要暫停公開，優先考慮 Marketplace `Unpublish`，不要輕易 `Remove`。移除 extension 會永久保留 extension name，且統計資料也會被移除。
+
+## 本機 deploy 指令
+
+`npm run deploy` 只保留給已準備好的環境使用。它不包含 PAT，會讓 `vsce` 從環境變數 `VSCE_PAT` 讀取 token：
+
+```bash
+VSCE_PAT=*** npm run deploy
+```
+
+日常發布應使用 GitHub Actions，不建議再用本機 `/root/.vsce` 明文 token 發布。
