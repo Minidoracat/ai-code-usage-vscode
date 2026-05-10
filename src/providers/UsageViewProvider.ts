@@ -6,10 +6,12 @@ import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRang
 import type {
   ImportIssue,
   PricingCatalog,
+  TokenBreakdown,
   TimeRange,
   TimeRangeKind,
   TimeZoneMode,
   TimeZoneState,
+  UsageCost,
   UsageProvider,
   UsageProviderFilter,
   UsageSummary,
@@ -54,7 +56,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusBarItem.name = "AI Coding Usage";
     this.statusBarItem.command = "aiCodingUsage.openDashboard";
-    this.statusBarItem.text = "$(graph) AI Usage";
+    this.statusBarItem.text = `$(graph) ${this.t("status.text.idle")}`;
     this.statusBarItem.tooltip = this.t("tooltip.openDashboard");
     this.statusBarItem.show();
     this.context.subscriptions.push(
@@ -434,20 +436,34 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   private updateStatus(summary: UsageSummary): void {
+    const locale = this.resolvedLocale();
     const tokens = tokenTotal(summary.totals.tokens);
     const cost = summary.totals.cost;
     if (cost) {
-      this.statusBarItem.text = `$(graph) ${cost.currency} ${formatCompact(cost.amount)}`;
+      this.statusBarItem.text = `$(graph) ${cost.currency} ${formatCompact(cost.amount, locale)}`;
     } else if (tokens > 0) {
-      this.statusBarItem.text = `$(graph) ${formatCompact(tokens)} tokens`;
+      this.statusBarItem.text = `$(graph) ${formatCompact(tokens, locale)} ${this.t("status.text.tokens")}`;
     } else {
-      this.statusBarItem.text = "$(graph) AI Usage";
+      this.statusBarItem.text = `$(graph) ${this.t("status.text.idle")}`;
     }
+
+    const timeZone = `${summary.range.timeZone.label} ${summary.range.timeZone.offsetLabel}`.trim();
     this.statusBarItem.tooltip = [
-      "AI Coding Usage",
-      `${formatFullNumber(tokens)} tokens`,
-      `${formatFullNumber(summary.totals.sessions)} sessions`,
-      `${formatFullNumber(summary.totals.activeModels)} models`,
+      this.t("app.title"),
+      `${this.t("filter.timeRange")}: ${this.t(rangeLabelKey(summary.range.kind))} · ${formatRangeDates(summary.range)} · ${timeZone}`,
+      `${this.t("filter.provider")}: ${formatProviderFilter(summary.providerFilter, (key) => this.t(key))}`,
+      `${this.t("metric.totalCost")}: ${formatCost(summary.totals.cost, locale, (key) => this.t(key))}`,
+      `${this.t("metric.totalTokens")}: ${formatFullNumber(tokens, locale)}`,
+      `${this.t("metric.inputTokens")}: ${formatFullNumber(inputTokens(summary.totals.tokens), locale)}`,
+      `${this.t("metric.outputTokens")}: ${formatFullNumber(outputTokens(summary.totals.tokens), locale)}`,
+      `${this.t("metric.cacheCreate")}: ${formatFullNumber(cacheCreateTokens(summary.totals.tokens), locale)}`,
+      `${this.t("metric.cacheRead")}: ${formatFullNumber(cacheReadTokens(summary.totals.tokens), locale)}`,
+      `${this.t("metric.messages")}: ${formatFullNumber(summary.totals.records, locale)}`,
+      `${this.t("metric.sessions")}: ${formatFullNumber(summary.totals.sessions, locale)}`,
+      `${this.t("metric.activeModels")}: ${formatFullNumber(summary.totals.activeModels, locale)}`,
+      `${this.t("refresh.lastUpdated")}: ${formatDateTime(new Date(), locale, summary.range.timeZone.resolvedTimeZone)}`,
+      "",
+      this.t("status.tooltip.openDetails"),
     ].join("\n");
   }
 
@@ -603,15 +619,64 @@ type ConfiguredUsagePath = {
   issue?: ImportIssue;
 };
 
-function formatCompact(value: number): string {
-  return new Intl.NumberFormat("en", {
+function formatCompact(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
     notation: "compact",
     maximumFractionDigits: value < 10 ? 2 : 1,
   }).format(value);
 }
 
-function formatFullNumber(value: number): string {
-  return new Intl.NumberFormat("en").format(value);
+function formatFullNumber(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(value);
+}
+
+function formatCost(cost: UsageCost | undefined, locale: string, translateMessage: (key: MessageKey) => string): string {
+  if (!cost) {
+    return translateMessage("state.unavailable");
+  }
+  const formatted = `${cost.currency} ${new Intl.NumberFormat(locale, {
+    maximumFractionDigits: cost.amount < 1 ? 4 : 2,
+  }).format(cost.amount)}`;
+  return cost.note === "partial" ? `${formatted} ${translateMessage("state.partialCost")}` : formatted;
+}
+
+function formatRangeDates(range: TimeRange): string {
+  return range.startDate === range.endDate ? range.startDate : `${range.startDate} - ${range.endDate}`;
+}
+
+function formatDateTime(date: Date, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(date);
+}
+
+function formatProviderFilter(providerFilter: UsageProviderFilter, translateMessage: (key: MessageKey) => string): string {
+  return providerFilter === "all" ? translateMessage("filter.all") : providerFilter;
+}
+
+function rangeLabelKey(kind: TimeRangeKind): MessageKey {
+  return `range.${kind}` as MessageKey;
+}
+
+function inputTokens(tokens: TokenBreakdown): number {
+  return tokens.input ?? 0;
+}
+
+function outputTokens(tokens: TokenBreakdown): number {
+  return tokens.output ?? 0;
+}
+
+function cacheCreateTokens(tokens: TokenBreakdown): number {
+  return (tokens.cacheWrite5m ?? 0) + (tokens.cacheWrite1h ?? 0);
+}
+
+function cacheReadTokens(tokens: TokenBreakdown): number {
+  return (tokens.cacheRead ?? 0) + (tokens.cachedInput ?? 0);
 }
 
 function isOpenSettingsMessage(message: unknown): boolean {
