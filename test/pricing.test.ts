@@ -41,6 +41,19 @@ test("current catalog prices Claude Code snapshot model ids", async () => {
   }
 });
 
+test("current catalog prices Claude Opus 4.8 by id and display name", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const byId = pricing.estimate(record("claude", "claude-opus-4-8", { input: 1_000_000, output: 1_000_000 }));
+  const byName = pricing.estimate(record("claude", "Claude Opus 4.8", { input: 1_000_000, output: 1_000_000 }));
+
+  assert.equal(byId.available, true);
+  assert.equal(byName.available, true);
+  if (byId.available && byName.available) {
+    assert.equal(byId.cost.amount, 30);
+    assert.equal(byName.cost.amount, 30);
+  }
+});
+
 test("current catalog prices Codex as API equivalent USD", async () => {
   const pricing = new PricingService(await srcCatalog());
   const gpt55 = pricing.estimate(record("codex", "gpt-5.5", { input: 1_000_000, cachedInput: 1_000_000, output: 1_000_000 }));
