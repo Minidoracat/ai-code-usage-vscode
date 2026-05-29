@@ -1,8 +1,19 @@
+<div align="center">
+
+<a href="https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage"><img src="../../resources/icon.png" alt="AI Coding Usage" width="120" /></a>
+
 # AI Coding Usage
 
-在 VS Code 中追踪本机 Claude Code 和 Codex 使用量。
+**在 VS Code 中追踪本机 Claude Code 和 Codex 使用量。**
 
-语言：[English](../../README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
+[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version-short/minidoracat.ai-code-usage.svg?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
+[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/minidoracat.ai-code-usage.svg?label=Installs)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
+[![GitHub](https://img.shields.io/badge/GitHub-Source-181717?logo=github&logoColor=white)](https://github.com/Minidoracat/ai-code-usage-vscode)
+[![Discord](https://img.shields.io/badge/Discord-Join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Gur2V67)
+
+[English](../../README.md)&nbsp;·&nbsp;[繁體中文](README.zh-TW.md)&nbsp;·&nbsp;**简体中文**&nbsp;·&nbsp;[日本語](README.ja.md)&nbsp;·&nbsp;[한국어](README.ko.md)
+
+</div>
 
 `AI Coding Usage` 是 local-first 的 VS Code extension，用于查看 AI coding 使用量、Token 数量、会话，以及 API 等效成本估算。它会读取 Claude Code 和 Codex 的本机 usage files，按 provider、model、session、date range 汇总，并在 VS Code dashboard 和 status bar summary 中展示结果。
 

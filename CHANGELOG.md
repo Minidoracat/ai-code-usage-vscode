@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Claude Opus 4.8 pricing in the packaged catalog (API-equivalent USD estimates), sharing Opus 4.5–4.8 rates with backward-compatible model aliases.
 
+### Changed
+
+- README now leads with the app icon, Marketplace/GitHub/Discord links, and a single English dashboard preview that links out to the localized READMEs for other languages.
+- CI and publish workflows run on the Node 24 GitHub Actions (`actions/checkout@v6`, `actions/setup-node@v6`, `actions/upload-artifact@v7`).
+
 ## 0.1.0 - 2026-05-10
 
 ### Added

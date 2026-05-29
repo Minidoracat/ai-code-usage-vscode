@@ -1,8 +1,19 @@
+<div align="center">
+
+<a href="https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage"><img src="resources/icon.png" alt="AI Coding Usage" width="120" /></a>
+
 # AI Coding Usage
 
-Track local Claude Code and Codex usage from VS Code.
+**Track local Claude Code and Codex usage from VS Code.**
 
-Languages: [English](README.md) | [繁體中文](docs/readme/README.zh-TW.md) | [简体中文](docs/readme/README.zh-CN.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md)
+[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version-short/minidoracat.ai-code-usage.svg?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
+[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/minidoracat.ai-code-usage.svg?label=Installs)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
+[![GitHub](https://img.shields.io/badge/GitHub-Source-181717?logo=github&logoColor=white)](https://github.com/Minidoracat/ai-code-usage-vscode)
+[![Discord](https://img.shields.io/badge/Discord-Join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Gur2V67)
+
+**English**&nbsp;·&nbsp;[繁體中文](docs/readme/README.zh-TW.md)&nbsp;·&nbsp;[简体中文](docs/readme/README.zh-CN.md)&nbsp;·&nbsp;[日本語](docs/readme/README.ja.md)&nbsp;·&nbsp;[한국어](docs/readme/README.ko.md)
+
+</div>
 
 `AI Coding Usage` is a local-first VS Code extension for reviewing AI coding usage, token volume, sessions, and API-equivalent cost estimates. It reads local usage files from Claude Code and Codex, aggregates them by provider/model/session/date range, and presents the result in a VS Code dashboard and status bar summary.
 
@@ -74,15 +85,9 @@ Pricing is calculated from the packaged pricing catalog in `src/pricing/catalog.
 
 ## Screenshots
 
-The screenshots below show the dashboard across supported languages.
+The dashboard below is shown with the English UI. Previews for other languages live in their localized READMEs: [繁體中文](docs/readme/README.zh-TW.md), [简体中文](docs/readme/README.zh-CN.md), [日本語](docs/readme/README.ja.md), [한국어](docs/readme/README.ko.md).
 
-| Language | Overview | Details | Pricing |
-| --- | --- | --- | --- |
-| English | <img src="docs/assets/screenshots/dashboard-en-1.png" alt="AI Coding Usage English dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-en-2.png" alt="AI Coding Usage English dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-en-3.png" alt="AI Coding Usage English dashboard pricing rules" width="260"> |
-| 繁體中文 | <img src="docs/assets/screenshots/dashboard-zh-tw-1.png" alt="AI Coding Usage 繁體中文 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-tw-2.png" alt="AI Coding Usage 繁體中文 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-tw-3.png" alt="AI Coding Usage 繁體中文 dashboard pricing rules" width="260"> |
-| 简体中文 | <img src="docs/assets/screenshots/dashboard-zh-cn-1.png" alt="AI Coding Usage 简体中文 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-cn-2.png" alt="AI Coding Usage 简体中文 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-zh-cn-3.png" alt="AI Coding Usage 简体中文 dashboard pricing rules" width="260"> |
-| 日本語 | <img src="docs/assets/screenshots/dashboard-ja-1.png" alt="AI Coding Usage 日本語 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-ja-2.png" alt="AI Coding Usage 日本語 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-ja-3.png" alt="AI Coding Usage 日本語 dashboard pricing rules" width="260"> |
-| 한국어 | <img src="docs/assets/screenshots/dashboard-ko-1.png" alt="AI Coding Usage 한국어 dashboard overview" width="260"> | <img src="docs/assets/screenshots/dashboard-ko-2.png" alt="AI Coding Usage 한국어 dashboard details" width="260"> | <img src="docs/assets/screenshots/dashboard-ko-3.png" alt="AI Coding Usage 한국어 dashboard pricing rules" width="260"> |
+![AI Coding Usage dashboard](docs/assets/screenshots/dashboard-en-1.png)
 
 Screenshot guidance lives in [docs/screenshots/README.md](docs/screenshots/README.md).
 
