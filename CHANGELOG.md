@@ -2,13 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.1.1 - Pending release
+## 0.1.1 - 2026-05-29
 
 ### Added
 
 - Claude Opus 4.8 pricing in the packaged catalog (API-equivalent USD estimates), sharing Opus 4.5–4.8 rates with backward-compatible model aliases.
 
-## 0.1.0 - Pending release
+## 0.1.0 - 2026-05-10
 
 ### Added
 
