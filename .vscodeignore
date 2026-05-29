@@ -22,3 +22,11 @@ PLAN.md
 AGENTS.md
 CLAUDE.md
 .gitignore
+
+# Localized dashboard screenshots are only referenced by the GitHub-hosted
+# localized READMEs. The Marketplace renders README.md (English), which uses
+# only dashboard-en-1.png, so the non-English shots are dead weight in the VSIX.
+docs/assets/screenshots/dashboard-zh-tw-*.png
+docs/assets/screenshots/dashboard-zh-cn-*.png
+docs/assets/screenshots/dashboard-ja-*.png
+docs/assets/screenshots/dashboard-ko-*.png

@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 - README now leads with the app icon, Marketplace/GitHub/Discord links, and a single English dashboard preview that links out to the localized READMEs for other languages.
 - CI and publish workflows run on the Node 24 GitHub Actions (`actions/checkout@v6`, `actions/setup-node@v6`, `actions/upload-artifact@v7`).
+- Trimmed the packaged VSIX (~2 MB → ~0.5 MB) by excluding localized dashboard screenshots that the Marketplace listing (English README) does not render.
 
 ## 0.1.0 - 2026-05-10
 
