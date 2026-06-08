@@ -11,7 +11,7 @@ import type {
   UsageRecord,
 } from "../domain/types";
 
-export const jsonUsageParserVersion = "local-json-v3";
+export const jsonUsageParserVersion = "local-json-v4-codex-stream";
 const maxDirectoryDepth = 6;
 const maxFilesPerSource = 10_000;
 const directoryReadConcurrency = 8;
@@ -170,7 +170,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     return files.slice(0, maxFilesPerSource);
   }
 
-  private async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
+  protected async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
     const kind = sourceKind(filePath);
     const meta = sourceMeta(filePath, kind, readAt);
     result.sourceMeta.push(meta);
