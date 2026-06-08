@@ -233,7 +233,7 @@ export class CachedUsageImporter {
       const fileKey = sourceFileKey(source.provider, sourceRootId, sourceFileId);
       const cached = index.files[fileKey];
       const fingerprintUnchanged = Boolean(cached && cached.mtimeMs === file.mtimeMs && cached.size === file.size);
-      if (!forceReparse && shouldSkipFileForRange(file, cached, fingerprintUnchanged, range)) {
+      if (!forceReparse && shouldSkipFileForRange(source.provider, file, cached, fingerprintUnchanged, range)) {
         skippedHistoricalFiles += 1;
         await report({ historicalComplete: false, rangeComplete: false });
         continue;
@@ -392,6 +392,7 @@ export class CachedUsageImporter {
     } catch {
       // Missing or incompatible cache is treated as cold start.
     }
+    await fs.rm(path.join(this.cacheRootPath, "records"), { recursive: true, force: true });
     return {
       schemaVersion: cacheSchemaVersion,
       parserVersion: jsonUsageParserVersion,
@@ -499,12 +500,15 @@ function createProgressEmitter(
   };
 }
 
-function shouldSkipFileForRange(file: UsageFileRef, cached: CachedFileEntry | undefined, fingerprintUnchanged: boolean, range: TimeRange): boolean {
-  if (fingerprintUnchanged && cached?.records === 0) {
+function shouldSkipFileForRange(provider: UsageProvider, file: UsageFileRef, cached: CachedFileEntry | undefined, fingerprintUnchanged: boolean, range: TimeRange): boolean {
+  if (fingerprintUnchanged && cached?.records === 0 && cached.diagnostics.errors.length === 0) {
     return true;
   }
   if (fingerprintUnchanged && cached?.fileSpanUtcStart && cached.fileSpanUtcEnd) {
     return !cachedFileTouchesRange(cached, range);
+  }
+  if (provider === "codex") {
+    return false;
   }
   if (!cached && file.pathDateKey) {
     return file.pathDateKey < shiftDateKey(range.startDate, -1) || file.pathDateKey > shiftDateKey(range.endDate, 1);

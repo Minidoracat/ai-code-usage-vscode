@@ -223,6 +223,7 @@ test("Codex adapter imports last token usage and falls back to rollout filename 
           timestamp: "2026-05-01T00:00:02.000Z",
           type: "event_msg",
           payload: {
+            type: "token_count",
             info: {
               last_token_usage: {
                 input_tokens: 42,
@@ -240,8 +241,121 @@ test("Codex adapter imports last token usage and falls back to rollout filename 
     assert.equal(result.records.length, 1);
     assert.equal(result.records[0]?.sessionId, "fixture-rollout-2026-05-01T00-00-00-abc123");
     assert.equal(result.records[0]?.model, "gpt-5.5");
-    assert.equal(result.records[0]?.tokens.input, 42);
+    assert.equal(result.records[0]?.tokens.input, 35);
     assert.equal(result.records[0]?.tokens.cachedInput, 7);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter tolerates recoverable escaped rollout lines", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-escaped-line-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-escaped.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:00.000Z",
+          type: "session_meta",
+          payload: {
+            id: "fixture-escaped-session",
+          },
+        }),
+        `\\${JSON.stringify({
+          timestamp: "2026-05-01T00:00:01.000Z",
+          type: "event_msg",
+          payload: {
+            type: "task_started",
+          },
+        })}`,
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:02.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 42,
+                cached_input_tokens: 7,
+                output_tokens: 9,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+
+    assert.equal(result.records.length, 1);
+    assert.equal(result.errors.some((error) => error.code === "malformed_jsonl"), false);
+    assert.equal(result.records[0]?.sessionId, "fixture-escaped-session");
+    assert.equal(result.records[0]?.tokens.input, 35);
+    assert.equal(result.records[0]?.tokens.cachedInput, 7);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter imports cumulative token counts as deltas", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-total-delta-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-total-delta.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:01.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 100,
+                cached_input_tokens: 40,
+                output_tokens: 10,
+              },
+              total_token_usage: {
+                input_tokens: 100,
+                cached_input_tokens: 40,
+                output_tokens: 10,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-05-01T00:00:02.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 150,
+                cached_input_tokens: 60,
+                output_tokens: 15,
+              },
+              total_token_usage: {
+                input_tokens: 150,
+                cached_input_tokens: 60,
+                output_tokens: 15,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+    const totals = result.records.reduce(
+      (sum, record) => ({
+        input: sum.input + (record.tokens.input ?? 0),
+        cachedInput: sum.cachedInput + (record.tokens.cachedInput ?? 0),
+        output: sum.output + (record.tokens.output ?? 0),
+      }),
+      { input: 0, cachedInput: 0, output: 0 },
+    );
+
+    assert.equal(result.records.length, 2);
+    assert.deepEqual(totals, { input: 90, cachedInput: 60, output: 15 });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -281,7 +395,7 @@ test("Codex adapter backfills token usage model from a later single-model turn c
 
     assert.equal(result.records.length, 1);
     assert.equal(result.records[0]?.model, "gpt-5.5");
-    assert.equal(result.records[0]?.tokens.input, 100);
+    assert.equal(result.records[0]?.tokens.input, 20);
     assert.equal(result.records[0]?.tokens.cachedInput, 80);
   } finally {
     await rm(dir, { recursive: true, force: true });

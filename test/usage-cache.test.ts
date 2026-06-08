@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { ClaudeUsageAdapter } from "../src/adapters/ClaudeUsageAdapter";
+import { CodexUsageAdapter } from "../src/adapters/CodexUsageAdapter";
+import type { JsonUsageAdapter } from "../src/adapters/JsonUsageAdapter";
 import { CachedUsageImporter } from "../src/services/CachedUsageImporter";
 import { TimeRangeService } from "../src/services/TimeRangeService";
 import { resolveTimeZone } from "../src/services/TimeZoneService";
@@ -232,6 +234,45 @@ test("cached importer includes timezone boundary files before filtering precisel
   }
 });
 
+test("cached importer parses cold Codex files whose path date is outside the active range", async () => {
+  const fixture = await createFixture();
+  try {
+    const oldSessionDirectory = path.join(fixture.sourceRoot, "2026", "04", "29");
+    await mkdir(oldSessionDirectory, { recursive: true });
+    await writeFile(
+      path.join(oldSessionDirectory, "rollout-2026-04-29T18-38-35-fixture-codex-session.jsonl"),
+      JSON.stringify({
+        timestamp: "2026-06-08T01:00:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 20,
+              output_tokens: 5,
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const result = await importer.loadForRange({
+      sources: [source("codex", fixture.sourceRoot, new CodexUsageAdapter(fixture.sourceRoot))],
+      range: utcRange("2026-06-08", "2026-06-08"),
+    });
+
+    assert.equal(result.imports[0]?.records.length, 1);
+    assert.equal(result.imports[0]?.records[0]?.tokens.input, 80);
+    assert.equal(result.imports[0]?.records[0]?.tokens.cachedInput, 20);
+    assert.equal(result.cache.rangeComplete, true);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test("cached importer throttles high-frequency progress updates and flushes completion", async () => {
   const fixture = await createFixture();
   try {
@@ -330,11 +371,20 @@ async function createFixture(): Promise<Fixture> {
   };
 }
 
-function source(sourceRoot: string, adapter: CountingClaudeAdapter) {
+function source(sourceRoot: string, adapter: CountingClaudeAdapter): { provider: "claude"; sourcePath: string; adapter: JsonUsageAdapter };
+function source(provider: "claude", sourceRoot: string, adapter: CountingClaudeAdapter): { provider: "claude"; sourcePath: string; adapter: JsonUsageAdapter };
+function source(provider: "codex", sourceRoot: string, adapter: CodexUsageAdapter): { provider: "codex"; sourcePath: string; adapter: JsonUsageAdapter };
+function source(
+  providerOrSourceRoot: "claude" | "codex" | string,
+  sourceRootOrAdapter: string | JsonUsageAdapter,
+  adapter?: JsonUsageAdapter,
+) {
+  const provider = adapter ? (providerOrSourceRoot as "claude" | "codex") : "claude";
+  const sourceRoot = adapter ? (sourceRootOrAdapter as string) : providerOrSourceRoot;
   return {
-    provider: "claude" as const,
+    provider,
     sourcePath: sourceRoot,
-    adapter,
+    adapter: adapter ?? (sourceRootOrAdapter as JsonUsageAdapter),
   };
 }
 
