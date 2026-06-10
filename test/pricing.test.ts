@@ -54,6 +54,39 @@ test("current catalog prices Claude Opus 4.8 by id and display name", async () =
   }
 });
 
+test("current catalog prices Claude Fable 5 by id and display name", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const byId = pricing.estimate(record("claude", "claude-fable-5", { input: 1_000_000, output: 1_000_000 }));
+  const byName = pricing.estimate(record("claude", "Claude Fable 5", { input: 1_000_000, output: 1_000_000 }));
+
+  assert.equal(byId.available, true);
+  assert.equal(byName.available, true);
+  if (byId.available && byName.available) {
+    assert.equal(byId.cost.amount, 60);
+    assert.equal(byName.cost.amount, 60);
+  }
+});
+
+test("current catalog prices Claude Fable 5 cache categories", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const estimate = pricing.estimate(record("claude", "claude-fable-5", { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 }));
+
+  assert.equal(estimate.available, true);
+  if (estimate.available) {
+    assert.equal(estimate.cost.amount, 61);
+  }
+});
+
+test("current catalog prices Claude Mythos 5 by id", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const estimate = pricing.estimate(record("claude", "claude-mythos-5", { input: 1_000_000, output: 1_000_000 }));
+
+  assert.equal(estimate.available, true);
+  if (estimate.available) {
+    assert.equal(estimate.cost.amount, 60);
+  }
+});
+
 test("current catalog prices Codex as API equivalent USD", async () => {
   const pricing = new PricingService(await srcCatalog());
   const gpt55 = pricing.estimate(record("codex", "gpt-5.5", { input: 1_000_000, cachedInput: 1_000_000, output: 1_000_000 }));
