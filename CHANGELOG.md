@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending release
+
+### Added
+
+- Claude Fable 5 and Claude Mythos 5 pricing in the packaged catalog (API-equivalent USD estimates, including prompt cache rates).
+
 ## 0.1.1 - 2026-05-29
 
 ### Added
