@@ -446,3 +446,58 @@ test("Codex adapter keeps early model-less token usage unknown when a file has m
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Codex adapter silently skips rate-limit-only token_count events with null info", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-rate-limit-only-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-rate-limit-only.jsonl"),
+      JSON.stringify({
+        timestamp: "2026-05-01T00:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: null,
+          rate_limits: {
+            primary: { used_percent: 12.5, window_minutes: 300, resets_in_seconds: 1800 },
+            secondary: { used_percent: 3.2, window_minutes: 10080, resets_in_seconds: 86400 },
+          },
+        },
+      }),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+
+    assert.equal(result.records.length, 0);
+    assert.equal(result.warnings.length, 0);
+    assert.equal(result.errors.length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter still warns when token_count info lacks usage fields", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-codex-info-no-usage-"));
+  try {
+    await writeFile(
+      path.join(dir, "rollout-info-no-usage.jsonl"),
+      JSON.stringify({
+        timestamp: "2026-05-01T00:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            model_context_window: 272000,
+          },
+        },
+      }),
+    );
+
+    const result = await new CodexUsageAdapter(dir).importUsage();
+
+    assert.equal(result.records.length, 0);
+    assert.ok(result.warnings.some((warning) => warning.code === "missing_tokens" && warning.line === 1));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

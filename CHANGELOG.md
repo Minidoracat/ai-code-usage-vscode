@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending release
+
+### Fixed
+
+- Codex rate-limit-only `token_count` events (`info: null`) no longer flood the import issues panel with `missing_tokens` warnings; the warning now fires only when usage fields are genuinely missing from a populated payload.
+
 ## 0.1.2 - 2026-06-10
 
 ### Added

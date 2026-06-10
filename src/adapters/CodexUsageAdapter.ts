@@ -96,7 +96,12 @@ export class CodexUsageAdapter extends JsonUsageAdapter {
     const payload = asObject(object["payload"]);
     const usage = this.usageForRecord(object, payload, context);
     if (object["type"] === "event_msg" && payload?.["type"] === "token_count" && !usage) {
-      result.warnings.push(issue("warning", "missing_tokens", "Codex token_count event has no token usage payload.", filePath, this.provider, line));
+      const info = payload["info"];
+      if (info === null || info === undefined) {
+        // Rate-limit-only heartbeats ship `info: null` by design; they carry no token usage and are not import issues.
+        return;
+      }
+      result.warnings.push(issue("warning", "missing_tokens", "Codex token_count event has info but no token usage payload.", filePath, this.provider, line));
       return;
     }
     if (!usage) {
