@@ -1,4 +1,6 @@
-language: "zh-TW"
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "zh"
+tone_instructions: "所有 review 留言、摘要與回覆一律使用繁體中文(台灣用語);技術術語、程式碼與識別字保留英文。"
 reviews:
   profile: "chill"
   request_changes_workflow: false
