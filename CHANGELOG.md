@@ -2,11 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## Pending release
+## 0.1.2 - 2026-06-10
 
 ### Added
 
 - Claude Fable 5 and Claude Mythos 5 pricing in the packaged catalog (API-equivalent USD estimates, including prompt cache rates).
+
+### Fixed
+
+- Codex JSONL usage import — streaming importer for large rollout files, tolerant parsing of escaped lines, `total_token_usage` deltas, cached-input split, and cold-cache time-range coverage (thanks @YuMJie, #1).
 
 ## 0.1.1 - 2026-05-29
 

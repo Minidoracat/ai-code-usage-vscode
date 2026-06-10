@@ -2,7 +2,7 @@
   "name": "ai-code-usage",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "minidoracat",
   "license": "MIT",
   "repository": {
