@@ -150,5 +150,9 @@
   "modal.selectUsageFolder": "{provider} usage folder 선택",
   "modal.detectedSources": "AI Coding Usage가 로컬 usage 소스를 찾아 적용했습니다:\n{summary}",
   "modal.invalidPaths": "AI Coding Usage가 이 기기에서 유효해 보이지 않는 usage paths를 무시했습니다:\n{summary}",
-  "modal.noSources": "AI Coding Usage가 이 기기에서 Claude Code 또는 Codex usage paths를 찾지 못했습니다. 데이터를 로드하려면 usage paths를 설정하세요."
+  "modal.noSources": "AI Coding Usage가 이 기기에서 Claude Code 또는 Codex usage paths를 찾지 못했습니다. 데이터를 로드하려면 usage paths를 설정하세요.",
+  "range.invalidCustom": "사용자 지정 날짜가 잘못되었습니다: 시작일은 종료일보다 늦을 수 없으며 연도는 2000년 이후여야 합니다.",
+  "state.backgroundRefresh": "백그라운드에서 계속 새로 고치는 중입니다. 완료되면 대시보드가 자동으로 업데이트됩니다.",
+  "modal.rebuildCacheConfirm": "캐시를 다시 빌드할까요? 모든 usage 파일을 다시 구문 분석합니다. 데이터 양에 따라 수십 초에서 몇 분까지 걸릴 수 있습니다.",
+  "modal.rebuildCacheProceed": "다시 빌드"
 }

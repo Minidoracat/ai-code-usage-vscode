@@ -66,6 +66,8 @@ type CachedFileEntry = {
     sourceMeta: SourceMeta[];
   };
   lastReadAt: string;
+  /** Adapter-specific resumable parse state for append-only files. */
+  parseState?: unknown;
 };
 
 type CacheIndex = {
@@ -77,11 +79,33 @@ type CacheIndex = {
   historicalFill?: Partial<Record<UsageProvider, { complete: boolean; checkedAt?: string }>>;
 };
 
+/**
+ * Tracks whether the index changed structurally during a load so the ~1.5MB
+ * index.json is only rewritten when file entries, source roots, or fill state
+ * actually changed — not on every auto-refresh tick.
+ */
+type IndexSession = {
+  index: CacheIndex;
+  dirty: boolean;
+  corruptionIssues: ImportIssue[];
+};
+
+type ShardCacheEntry = {
+  items: ShardItem[];
+  dirty: boolean;
+};
+
 type CachedUsageRecord = Omit<UsageRecord, "raw">;
 
 type ShardItem = {
   sourceRootId: string;
   sourceFileId: string;
+  /**
+   * Ordinal of the record within its source file at parse time. Makes
+   * incremental appends idempotent: re-appending after a crash first drops
+   * items at or past the resume ordinal.
+   */
+  seq?: number;
   record: CachedUsageRecord;
 };
 
@@ -98,8 +122,21 @@ type RangeReadResult = {
 
 type ProgressReporter = (state?: Partial<CachedUsageState>, options?: { flush?: boolean }) => Promise<void>;
 
+// Upper bound on shards held in memory. Keeps steady-state range reads from
+// re-parsing shard JSON off disk every refresh while bounding resident memory
+// during full rebuilds (oldest shards flush + evict as the scan moves forward).
+const shardCacheCapacity = 48;
+
 export class CachedUsageImporter {
   private writeQueue: Promise<unknown> = Promise.resolve();
+  // In-memory shard store, LRU-ordered by Map insertion (re-inserted on access).
+  // Authoritative while this process is the only writer; foreign writers are
+  // detected via the index stamp below and invalidate the whole store.
+  private readonly shardCache = new Map<string, ShardCacheEntry>();
+  // index.json updatedAt as last read or written by this process. A different
+  // value on disk means another extension host (a second VS Code window on the
+  // same profile) wrote the cache, so the in-memory shards may be stale.
+  private lastSeenIndexStamp?: string;
 
   public constructor(private readonly cacheRootPath: string) {}
 
@@ -121,6 +158,7 @@ export class CachedUsageImporter {
   }
 
   public async clear(): Promise<void> {
+    this.shardCache.clear();
     await fs.rm(this.cacheRootPath, { recursive: true, force: true });
   }
 
@@ -131,7 +169,15 @@ export class CachedUsageImporter {
     onProgress?: (progress: CachedUsageProgress, cache: CachedUsageState) => Promise<void>;
   }): Promise<CachedUsageLoadResult> {
     await fs.mkdir(this.cacheRootPath, { recursive: true });
-    const index = await this.readIndex();
+    const { index, reset } = await this.readIndex();
+    if (reset || (this.lastSeenIndexStamp !== undefined && index.updatedAt !== this.lastSeenIndexStamp)) {
+      // Cold start, schema change, or another extension host wrote the cache:
+      // drop in-memory shards so reads and incremental appends use the
+      // authoritative on-disk state instead of a stale snapshot.
+      this.shardCache.clear();
+    }
+    this.lastSeenIndexStamp = index.updatedAt;
+    const session: IndexSession = { index, dirty: reset, corruptionIssues: [] };
     const progress: CachedUsageProgress = {
       filesTotal: 0,
       filesChecked: 0,
@@ -157,7 +203,7 @@ export class CachedUsageImporter {
       progress.currentProvider = source.provider;
       progress.currentPath = source.sourcePath;
       await report({ rangeComplete: false }, { flush: true });
-      const loaded = await this.loadProvider(index, source, input.range, progress, report, forced);
+      const loaded = await this.loadProvider(session, source, input.range, progress, report, forced);
       imports.push(loaded.importResult);
       parsedFiles += loaded.parsedFiles;
       if (loaded.skippedHistoricalFiles > 0) {
@@ -168,8 +214,11 @@ export class CachedUsageImporter {
       }
     }
 
-    index.updatedAt = new Date().toISOString();
-    await this.writeIndex(index);
+    if (session.dirty) {
+      index.updatedAt = new Date().toISOString();
+      await this.writeIndex(index);
+      this.lastSeenIndexStamp = index.updatedAt;
+    }
     progress.currentProvider = undefined;
     progress.currentPath = undefined;
     await report(cacheState({ status: parsedFiles > 0 ? (forced ? "rebuilding" : "cold") : historicalComplete ? "warm" : "partial", rangeComplete, historicalComplete }), {
@@ -187,13 +236,14 @@ export class CachedUsageImporter {
   }
 
   private async loadProvider(
-    index: CacheIndex,
+    session: IndexSession,
     source: CachedUsageSource,
     range: TimeRange,
     progress: CachedUsageProgress,
     report: ProgressReporter,
     forceReparse: boolean,
   ): Promise<LoadProviderResult> {
+    const index = session.index;
     const listed = await source.adapter.listUsageFiles({ usagePath: source.sourcePath });
     if (!source.sourcePath) {
       const importResult: AdapterImportResult = {
@@ -213,15 +263,18 @@ export class CachedUsageImporter {
     progress.filesTotal += listed.files.length;
     await report({ rangeComplete: false }, { flush: true });
     const sourceRootId = sourceRootHash(source.provider, source.sourcePath, process.platform);
-    index.sourceRoots[sourceRootId] = {
-      provider: source.provider,
-      sourceRootId,
-      platform: process.platform,
-      lastScannedAt: new Date().toISOString(),
-    };
+    if (!index.sourceRoots[sourceRootId]) {
+      index.sourceRoots[sourceRootId] = {
+        provider: source.provider,
+        sourceRootId,
+        platform: process.platform,
+        lastScannedAt: new Date().toISOString(),
+      };
+      session.dirty = true;
+    }
 
     const activeFileKeys = new Set(listed.files.map((file) => sourceFileKey(source.provider, sourceRootId, sourceFileHash(sourceRootId, file.filePath))));
-    await this.removeDeletedFiles(index, sourceRootId, activeFileKeys);
+    await this.removeDeletedFiles(session, sourceRootId, activeFileKeys);
 
     let skippedHistoricalFiles = 0;
     let parsedFiles = 0;
@@ -245,25 +298,37 @@ export class CachedUsageImporter {
       parsedFiles += 1;
       progress.filesParsed += 1;
       await report({ status: forceReparse ? "rebuilding" : "cold", rangeComplete: false });
-      const parsed = await source.adapter.importUsageFile(file.filePath);
-      const entry = await this.writeParsedFile(index, source, file, sourceRootId, sourceFileId, fileKey, parsed);
+      const resumablePrior = !forceReparse && cached && file.size > cached.size ? cached.parseState : undefined;
+      const outcome = await source.adapter.importUsageFileWithState(file.filePath, resumablePrior);
+      const entry =
+        outcome.appended && cached
+          ? await this.appendParsedFile(session, source, file, cached, sourceRootId, sourceFileId, outcome.result, outcome.state)
+          : await this.writeParsedFile(session, source, file, sourceRootId, sourceFileId, fileKey, outcome.result, outcome.state);
       index.files[fileKey] = entry;
+      session.dirty = true;
       await report({ status: forceReparse ? "rebuilding" : "cold", rangeComplete: false });
     }
 
-    index.historicalFill = {
-      ...index.historicalFill,
-      [source.provider]: { complete: skippedHistoricalFiles === 0, checkedAt: new Date().toISOString() },
-    };
+    const fillComplete = skippedHistoricalFiles === 0;
+    if (index.historicalFill?.[source.provider]?.complete !== fillComplete) {
+      index.historicalFill = {
+        ...index.historicalFill,
+        [source.provider]: { complete: fillComplete, checkedAt: new Date().toISOString() },
+      };
+      session.dirty = true;
+    }
 
     const activeRootIds = new Set([sourceRootId]);
-    const rangeRead = await this.readRecordsForRange(source.provider, activeRootIds, range, progress, report);
+    const rangeRead = await this.readRecordsForRange(session, source.provider, activeRootIds, range, progress, report);
+    await this.flushDirtyShards();
+    const corruptionErrors = session.corruptionIssues.filter((item) => item.provider === source.provider);
+    session.corruptionIssues = session.corruptionIssues.filter((item) => item.provider !== source.provider);
     const diagnostics = diagnosticsForActiveRoot(index, source.provider, sourceRootId);
     const importResult: AdapterImportResult = {
       provider: source.provider,
       records: rangeRead.records,
       warnings: [...listed.warnings, ...diagnostics.warnings],
-      errors: [...listed.errors, ...diagnostics.errors, ...rangeRead.errors],
+      errors: [...listed.errors, ...diagnostics.errors, ...rangeRead.errors, ...corruptionErrors],
       sourceMeta: [...listed.sourceMeta, ...diagnostics.sourceMeta],
     };
     if (source.issue) {
@@ -275,30 +340,42 @@ export class CachedUsageImporter {
   }
 
   private async writeParsedFile(
-    index: CacheIndex,
+    session: IndexSession,
     source: CachedUsageSource,
     file: UsageFileRef,
     sourceRootId: string,
     sourceFileId: string,
     fileKey: SourceFileCacheKey,
     parsed: AdapterImportResult,
+    parseState?: unknown,
   ): Promise<CachedFileEntry> {
-    const previous = index.files[fileKey];
-    if (previous) {
-      await this.removeRecordsForFile(previous);
-    }
+    const previous = session.index.files[fileKey];
     const records = parsed.records.map((record) => stripRaw(record, sourceFileId));
-    const grouped = groupRecordsByUtcShard(records);
+    const grouped = groupRecordsByUtcShard(records, 0);
     const shardKeys = [...grouped.keys()].sort();
+
+    // Shards the file used to touch but no longer does need this file's old
+    // records removed; shards in the new set are cleaned by the idempotent
+    // filter below, so they skip the extra pass entirely.
+    if (previous) {
+      for (const shardKey of previous.shardKeys) {
+        if (grouped.has(shardKey)) {
+          continue;
+        }
+        const shard = await this.loadShard(session, source.provider, shardKey);
+        const kept = shard.items.filter((item) => item.sourceRootId !== sourceRootId || item.sourceFileId !== sourceFileId);
+        if (kept.length !== shard.items.length) {
+          shard.items = kept;
+          shard.dirty = true;
+        }
+      }
+    }
     for (const shardKey of shardKeys) {
-      const existing = await this.readShard(source.provider, shardKey, { recoverCorrupt: true });
-      const kept = existing.filter((item) => item.sourceRootId !== sourceRootId || item.sourceFileId !== sourceFileId);
+      const shard = await this.loadShard(session, source.provider, shardKey);
+      const kept = shard.items.filter((item) => item.sourceRootId !== sourceRootId || item.sourceFileId !== sourceFileId);
       const fileRecords = grouped.get(shardKey) ?? [];
-      await this.writeShard(
-        source.provider,
-        shardKey,
-        kept.concat(fileRecords.map((record) => ({ sourceRootId, sourceFileId, record }))),
-      );
+      shard.items = kept.concat(fileRecords.map(({ record, seq }) => ({ sourceRootId, sourceFileId, seq, record })));
+      shard.dirty = true;
     }
 
     return {
@@ -318,26 +395,88 @@ export class CachedUsageImporter {
         sourceMeta: parsed.sourceMeta.map((meta) => sanitizeSourceMetaForCache(meta, sourceFileId)),
       },
       lastReadAt: new Date().toISOString(),
+      parseState,
     };
   }
 
-  private async removeDeletedFiles(index: CacheIndex, sourceRootId: string, activeFileKeys: Set<SourceFileCacheKey>): Promise<void> {
-    const deleted = Object.entries(index.files).filter(([, entry]) => entry.sourceRootId === sourceRootId && !activeFileKeys.has(entry.fileKey));
+  /**
+   * Merges an incremental (append-only) parse into the file's existing cache
+   * entry: appended records join their shards, the shard-key set is the union
+   * of old and new, spans widen, and diagnostics accumulate. Items at or past
+   * the resume ordinal are dropped first so a crash between shard flush and
+   * index write cannot double-count the same appended records.
+   */
+  private async appendParsedFile(
+    session: IndexSession,
+    source: CachedUsageSource,
+    file: UsageFileRef,
+    previous: CachedFileEntry,
+    sourceRootId: string,
+    sourceFileId: string,
+    parsed: AdapterImportResult,
+    parseState?: unknown,
+  ): Promise<CachedFileEntry> {
+    const records = parsed.records.map((record) => stripRaw(record, sourceFileId));
+    const grouped = groupRecordsByUtcShard(records, previous.records);
+
+    for (const [shardKey, fileRecords] of grouped) {
+      const shard = await this.loadShard(session, source.provider, shardKey);
+      const kept = shard.items.filter(
+        (item) =>
+          item.sourceRootId !== sourceRootId ||
+          item.sourceFileId !== sourceFileId ||
+          item.seq === undefined ||
+          item.seq < previous.records,
+      );
+      shard.items = kept.concat(fileRecords.map(({ record, seq }) => ({ sourceRootId, sourceFileId, seq, record })));
+      shard.dirty = true;
+    }
+
+    const spans = records.map(recordTimestamp);
+    return {
+      ...previous,
+      mtimeMs: file.mtimeMs,
+      size: file.size,
+      shardKeys: [...new Set([...previous.shardKeys, ...grouped.keys()])].sort(),
+      records: previous.records + records.length,
+      fileSpanUtcStart: earliest([previous.fileSpanUtcStart, ...spans]),
+      fileSpanUtcEnd: latest([previous.fileSpanUtcEnd, ...spans]),
+      diagnostics: {
+        // A file that has grown past its empty stage should not keep warning
+        // about being empty.
+        warnings: previous.diagnostics.warnings
+          .filter((warning) => warning.code !== "empty_file")
+          .concat(parsed.warnings.map((warning) => sanitizeIssueForCache(warning, sourceFileId))),
+        errors: previous.diagnostics.errors.concat(parsed.errors.map((error) => sanitizeIssueForCache(error, sourceFileId))),
+        sourceMeta: previous.diagnostics.sourceMeta,
+      },
+      lastReadAt: new Date().toISOString(),
+      parseState,
+    };
+  }
+
+  private async removeDeletedFiles(session: IndexSession, sourceRootId: string, activeFileKeys: Set<SourceFileCacheKey>): Promise<void> {
+    const deleted = Object.entries(session.index.files).filter(([, entry]) => entry.sourceRootId === sourceRootId && !activeFileKeys.has(entry.fileKey));
     for (const [fileKey, entry] of deleted) {
-      await this.removeRecordsForFile(entry);
-      delete index.files[fileKey as SourceFileCacheKey];
+      await this.removeRecordsForFile(session, entry);
+      delete session.index.files[fileKey as SourceFileCacheKey];
+      session.dirty = true;
     }
   }
 
-  private async removeRecordsForFile(entry: CachedFileEntry): Promise<void> {
+  private async removeRecordsForFile(session: IndexSession, entry: CachedFileEntry): Promise<void> {
     for (const shardKey of entry.shardKeys) {
-      const existing = await this.readShard(entry.provider, shardKey, { recoverCorrupt: true });
-      const kept = existing.filter((item) => item.sourceRootId !== entry.sourceRootId || item.sourceFileId !== entry.sourceFileId);
-      await this.writeShard(entry.provider, shardKey, kept);
+      const shard = await this.loadShard(session, entry.provider, shardKey);
+      const kept = shard.items.filter((item) => item.sourceRootId !== entry.sourceRootId || item.sourceFileId !== entry.sourceFileId);
+      if (kept.length !== shard.items.length) {
+        shard.items = kept;
+        shard.dirty = true;
+      }
     }
   }
 
   private async readRecordsForRange(
+    session: IndexSession,
     provider: UsageProvider,
     activeRootIds: Set<string>,
     range: TimeRange,
@@ -348,16 +487,18 @@ export class CachedUsageImporter {
     const errors: ImportIssue[] = [];
     const start = new Date(range.start).getTime();
     const end = new Date(range.end).getTime();
-    for (const shardKey of touchedUtcShardKeys(range)) {
-      let shard: ShardItem[];
-      try {
-        shard = await this.readShard(provider, shardKey);
-      } catch (error) {
-        errors.push(cacheReadIssue(provider, shardKey, error));
-        await report({ rangeComplete: false });
-        continue;
-      }
-      for (const item of shard) {
+    const touched = touchedUtcShardKeys(range);
+    if (touched.truncated) {
+      errors.push({
+        severity: "error",
+        code: "cache_read_failed",
+        message: `Range spans more than ${maxTouchedShardKeys} days; only the most recent ${maxTouchedShardKeys} days were read.`,
+        provider,
+      });
+    }
+    for (const shardKey of touched.keys) {
+      const shard = await this.loadShard(session, provider, shardKey);
+      for (const item of shard.items) {
         if (!activeRootIds.has(item.sourceRootId)) {
           continue;
         }
@@ -376,17 +517,98 @@ export class CachedUsageImporter {
     return { records, errors };
   }
 
-  private async readIndex(): Promise<CacheIndex> {
+  /**
+   * Returns the in-memory shard, loading it from disk on first access. A shard
+   * that fails to parse is recovered as empty: every index entry referencing it
+   * is purged so the affected files re-import on the next load, and a
+   * cache_read_failed issue is queued so the UI sees the partial state.
+   */
+  private async loadShard(session: IndexSession, provider: UsageProvider, shardKey: string): Promise<ShardCacheEntry> {
+    const cacheKey = `${provider}:${shardKey}`;
+    const cached = this.shardCache.get(cacheKey);
+    if (cached) {
+      this.shardCache.delete(cacheKey);
+      this.shardCache.set(cacheKey, cached);
+      return cached;
+    }
+
+    let items: ShardItem[] = [];
+    let recovered = false;
+    try {
+      items = await this.readShardFromDisk(provider, shardKey);
+      if (items.length === 0 && this.indexReferencesShard(session, provider, shardKey)) {
+        // The shard file is gone (or empty) but index entries still claim
+        // records in it — e.g. a crash between shard flush and index write.
+        // Purge those entries so the affected files re-import next load.
+        this.purgeEntriesForShard(session, provider, shardKey);
+        session.corruptionIssues.push(cacheReadIssue(provider, shardKey, new Error("Shard file is missing but still referenced by the cache index.")));
+      }
+    } catch (error) {
+      this.purgeEntriesForShard(session, provider, shardKey);
+      session.corruptionIssues.push(cacheReadIssue(provider, shardKey, error));
+      items = [];
+      // Dirty so the next flush replaces the unreadable shard file on disk.
+      recovered = true;
+    }
+    const entry: ShardCacheEntry = { items, dirty: recovered };
+    this.shardCache.set(cacheKey, entry);
+    await this.evictOverCapacity();
+    return entry;
+  }
+
+  private indexReferencesShard(session: IndexSession, provider: UsageProvider, shardKey: string): boolean {
+    return Object.values(session.index.files).some((entry) => entry.provider === provider && entry.records > 0 && entry.shardKeys.includes(shardKey));
+  }
+
+  private purgeEntriesForShard(session: IndexSession, provider: UsageProvider, shardKey: string): void {
+    for (const [fileKey, entry] of Object.entries(session.index.files)) {
+      if (entry.provider === provider && entry.shardKeys.includes(shardKey)) {
+        delete session.index.files[fileKey as SourceFileCacheKey];
+        session.dirty = true;
+      }
+    }
+  }
+
+  private async evictOverCapacity(): Promise<void> {
+    while (this.shardCache.size > shardCacheCapacity) {
+      const oldest = this.shardCache.keys().next().value;
+      if (oldest === undefined) {
+        return;
+      }
+      const entry = this.shardCache.get(oldest);
+      this.shardCache.delete(oldest);
+      if (entry?.dirty) {
+        const [provider, shardKey] = splitShardCacheKey(oldest);
+        await this.writeShard(provider, shardKey, entry.items);
+      }
+    }
+  }
+
+  private async flushDirtyShards(): Promise<void> {
+    for (const [cacheKey, entry] of this.shardCache) {
+      if (!entry.dirty) {
+        continue;
+      }
+      const [provider, shardKey] = splitShardCacheKey(cacheKey);
+      await this.writeShard(provider, shardKey, entry.items);
+      entry.dirty = false;
+    }
+  }
+
+  private async readIndex(): Promise<{ index: CacheIndex; reset: boolean }> {
     try {
       const parsed = JSON.parse(await fs.readFile(this.indexPath(), "utf8")) as Partial<CacheIndex>;
       if (parsed.schemaVersion === cacheSchemaVersion && parsed.parserVersion === jsonUsageParserVersion && parsed.files && parsed.sourceRoots) {
         return {
-          schemaVersion: cacheSchemaVersion,
-          parserVersion: jsonUsageParserVersion,
-          updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
-          files: parsed.files as Record<SourceFileCacheKey, CachedFileEntry>,
-          sourceRoots: parsed.sourceRoots,
-          historicalFill: parsed.historicalFill,
+          index: {
+            schemaVersion: cacheSchemaVersion,
+            parserVersion: jsonUsageParserVersion,
+            updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+            files: parsed.files as Record<SourceFileCacheKey, CachedFileEntry>,
+            sourceRoots: parsed.sourceRoots,
+            historicalFill: parsed.historicalFill,
+          },
+          reset: false,
         };
       }
     } catch {
@@ -394,11 +616,14 @@ export class CachedUsageImporter {
     }
     await fs.rm(path.join(this.cacheRootPath, "records"), { recursive: true, force: true });
     return {
-      schemaVersion: cacheSchemaVersion,
-      parserVersion: jsonUsageParserVersion,
-      updatedAt: new Date().toISOString(),
-      files: {},
-      sourceRoots: {},
+      index: {
+        schemaVersion: cacheSchemaVersion,
+        parserVersion: jsonUsageParserVersion,
+        updatedAt: new Date().toISOString(),
+        files: {},
+        sourceRoots: {},
+      },
+      reset: true,
     };
   }
 
@@ -406,7 +631,7 @@ export class CachedUsageImporter {
     await writeJsonAtomic(this.indexPath(), index);
   }
 
-  private async readShard(provider: UsageProvider, shardKey: string, options: { recoverCorrupt?: boolean } = {}): Promise<ShardItem[]> {
+  private async readShardFromDisk(provider: UsageProvider, shardKey: string): Promise<ShardItem[]> {
     let content: string;
     try {
       content = await fs.readFile(this.shardPath(provider, shardKey), "utf8");
@@ -417,18 +642,11 @@ export class CachedUsageImporter {
       throw error;
     }
 
-    try {
-      const parsed = JSON.parse(content) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed as ShardItem[];
-      }
-      throw new Error("Cache shard is not an array.");
-    } catch (error) {
-      if (options.recoverCorrupt) {
-        return [];
-      }
-      throw error;
+    const parsed = JSON.parse(content) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed as ShardItem[];
     }
+    throw new Error("Cache shard is not an array.");
   }
 
   private async writeShard(provider: UsageProvider, shardKey: string, items: ShardItem[]): Promise<void> {
@@ -462,9 +680,14 @@ function cacheReadIssue(provider: UsageProvider, shardKey: string, error: unknow
   return {
     severity: "error",
     code: "cache_read_failed",
-    message: `Failed to read cached usage shard ${shardKey}: ${errorMessage(error)}`,
+    message: `Failed to read cached usage shard ${shardKey}: ${errorMessage(error)}. Affected files were scheduled for re-import.`,
     provider,
   };
+}
+
+function splitShardCacheKey(cacheKey: string): [UsageProvider, string] {
+  const separator = cacheKey.indexOf(":");
+  return [cacheKey.slice(0, separator) as UsageProvider, cacheKey.slice(separator + 1)];
 }
 
 function createProgressEmitter(
@@ -500,12 +723,28 @@ function createProgressEmitter(
   };
 }
 
+const coldSkipMtimeSlackMs = 86_400_000;
+
 function shouldSkipFileForRange(provider: UsageProvider, file: UsageFileRef, cached: CachedFileEntry | undefined, fingerprintUnchanged: boolean, range: TimeRange): boolean {
   if (fingerprintUnchanged && cached?.records === 0 && cached.diagnostics.errors.length === 0) {
     return true;
   }
   if (fingerprintUnchanged && cached?.fileSpanUtcStart && cached.fileSpanUtcEnd) {
     return !cachedFileTouchesRange(cached, range);
+  }
+  if (!cached) {
+    // Cold pruning. A session file cannot contain records earlier than its
+    // path date (sessions append forward), so files dated after the range end
+    // are skippable. A file last written before the range start cannot contain
+    // in-range records either (records observe past activity only); the 1-day
+    // slack absorbs clock skew and local-vs-UTC offsets. Skipped files are
+    // counted as historical backlog and get parsed when a range needs them.
+    if (file.pathDateKey && file.pathDateKey > shiftDateKey(range.endDate, 1)) {
+      return true;
+    }
+    if (file.mtimeMs < new Date(range.start).getTime() - coldSkipMtimeSlackMs) {
+      return true;
+    }
   }
   if (provider === "codex") {
     return false;
@@ -527,35 +766,44 @@ function spansOverlap(leftStart: string, leftEnd: string, rightStart: string, ri
   return new Date(leftStart).getTime() <= new Date(rightEnd).getTime() && new Date(leftEnd).getTime() >= new Date(rightStart).getTime();
 }
 
-function groupRecordsByUtcShard(records: CachedUsageRecord[]): Map<string, CachedUsageRecord[]> {
-  const groups = new Map<string, CachedUsageRecord[]>();
-  for (const record of records) {
+function groupRecordsByUtcShard(records: CachedUsageRecord[], seqBase: number): Map<string, Array<{ record: CachedUsageRecord; seq: number }>> {
+  const groups = new Map<string, Array<{ record: CachedUsageRecord; seq: number }>>();
+  records.forEach((record, index) => {
     const timestamp = recordTimestamp(record);
     if (!timestamp) {
-      continue;
+      return;
     }
     const key = utcDateKey(new Date(timestamp));
+    const item = { record, seq: seqBase + index };
     const existing = groups.get(key);
     if (existing) {
-      existing.push(record);
+      existing.push(item);
     } else {
-      groups.set(key, [record]);
+      groups.set(key, [item]);
     }
-  }
+  });
   return groups;
 }
 
-function touchedUtcShardKeys(range: TimeRange): string[] {
+// Hard ceiling on shard-key enumeration (~11 years). Defends against
+// degenerate ranges (e.g. a mistyped year like 0202) enumerating hundreds of
+// thousands of shard lookups. Enumeration walks backwards from the range end
+// so a truncated range keeps the most recent days — the ones that can
+// actually hold data — and drops the ancient end.
+const maxTouchedShardKeys = 4_000;
+
+function touchedUtcShardKeys(range: TimeRange): { keys: string[]; truncated: boolean } {
   const start = new Date(range.start);
   const end = new Date(range.end);
   const keys: string[] = [];
-  let cursor = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
-  while (cursor <= endDay) {
+  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  let cursor = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  while (cursor >= startDay && keys.length < maxTouchedShardKeys) {
     keys.push(utcDateKey(new Date(cursor)));
-    cursor += 86_400_000;
+    cursor -= 86_400_000;
   }
-  return keys;
+  keys.reverse();
+  return { keys, truncated: cursor >= startDay };
 }
 
 function utcDateKey(date: Date): string {
@@ -643,6 +891,6 @@ function isNodeErrorCode(error: unknown, code: string): boolean {
 async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await fs.writeFile(tempPath, `${JSON.stringify(value)}\n`, "utf8");
   await fs.rename(tempPath, filePath);
 }

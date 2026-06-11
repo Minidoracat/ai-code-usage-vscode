@@ -64,6 +64,10 @@ npm run release:gate
 
 `.vsix` 必須通過 inspection，不得包含本機 `.claude` / `.codex` usage data、測試 raw fixtures、OMX runtime state、PAT 或其他 private artifacts。
 
+### Parser / 診斷語義變更檢查
+
+若本次 release 改動了 usage 解析行為或匯入診斷語義（`src/adapters/**` 的 parse 邏輯、警告訊息、警告觸發條件），**必須**同步 bump `src/adapters/JsonUsageAdapter.ts` 的 `jsonUsageParserVersion`。快取以這個版本字串判斷有效性；不 bump 會讓既有使用者的快取沿用舊版 parser 產生的記錄與警告（v0.1.3 的 `missing_tokens` 殘留警告即此成因）。bump 後使用者升級首次啟動會自動重建快取，冷建剪枝會把成本控制在目前範圍所需的檔案。
+
 ## 發布版本
 
 1. 更新 `package.json` 的 `version`。

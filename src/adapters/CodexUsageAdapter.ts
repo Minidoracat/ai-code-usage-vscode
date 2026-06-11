@@ -1,8 +1,8 @@
-import { createReadStream } from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import type { AdapterImportResult, ImportIssue, SourceKind, SourceMeta, TokenBreakdown, UsageProvider, UsageRecord } from "../domain/types";
 import { JsonUsageAdapter, jsonUsageParserVersion } from "./JsonUsageAdapter";
+import type { UsageFileParseOutcome } from "./JsonUsageAdapter";
+import { streamJsonlLines, tailMatches } from "./jsonlStream";
 
 const modelContextPaths = ["model", "message.model", "response.model", "payload.model", "payload.collaboration_mode.settings.model"];
 
@@ -11,6 +11,26 @@ type CodexFileContext = {
   currentModel?: string;
   models: Set<string>;
   lastTotalUsage?: CodexTokenCounts;
+};
+
+/**
+ * Resumable parse state for append-only Codex rollout files. Persisted in the
+ * usage cache so a grown file only has its appended tail parsed. The context
+ * carries everything line-order-dependent: the model set (for end-of-file
+ * model backfill), the session id, and the running total_token_usage needed
+ * for delta computation.
+ */
+export type CodexParseState = {
+  parsedBytes: number;
+  tailHash: string;
+  lineCount: number;
+  allowIncremental: boolean;
+  context: {
+    sessionId: string;
+    currentModel?: string;
+    models: string[];
+    lastTotalUsage?: CodexTokenCounts;
+  };
 };
 
 type PendingCodexRecord = Omit<UsageRecord, "model"> & {
@@ -31,40 +51,110 @@ export class CodexUsageAdapter extends JsonUsageAdapter {
       await super.readFile(filePath, result, readAt);
       return;
     }
+    await this.parseJsonl(filePath, result, readAt, undefined);
+  }
 
-    const meta = sourceMeta(filePath, "jsonl", readAt);
-    result.sourceMeta.push(meta);
-    const context: CodexFileContext = {
-      sessionId: path.basename(filePath, path.extname(filePath)),
-      models: new Set(),
-    };
-    const records: PendingCodexRecord[] = [];
-    let lineNumber = 0;
-    let sawContent = false;
-
-    try {
-      const input = createReadStream(filePath, { encoding: "utf8" });
-      const reader = createInterface({ input, crlfDelay: Infinity });
-      for await (const line of reader) {
-        lineNumber += 1;
-        if (!line.trim()) {
-          continue;
-        }
-        sawContent = true;
-        const row = parseJsonLine(line, filePath, lineNumber, result, this.provider);
-        if (row === undefined) {
-          continue;
-        }
-        this.addCodexRecord(row, filePath, meta, result, lineNumber, context, records);
-      }
-    } catch (error) {
-      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
-      return;
+  public override async importUsageFileWithState(filePath: string, prior?: unknown, readAt = new Date().toISOString()): Promise<UsageFileParseOutcome> {
+    if (sourceKind(filePath) !== "jsonl") {
+      return { result: await this.importUsageFile(filePath, readAt) };
     }
 
-    if (!sawContent) {
+    const resume = validateCodexParseState(prior);
+    if (resume && resume.allowIncremental && (await tailMatches(filePath, resume.parsedBytes, resume.tailHash))) {
+      const appendedResult = this.emptyResult();
+      const state = await this.parseJsonl(filePath, appendedResult, readAt, resume);
+      if (state) {
+        return { result: appendedResult, state, appended: true };
+      }
+      // The appended segment invalidated the resume context (e.g. a new model
+      // appeared, changing the historical backfill); fall through to a full
+      // parse with a fresh result.
+    }
+
+    const fullResult = this.emptyResult();
+    const state = await this.parseJsonl(filePath, fullResult, readAt, undefined);
+    return { result: fullResult, state };
+  }
+
+  private emptyResult(): AdapterImportResult {
+    return { provider: this.provider, records: [], warnings: [], errors: [], sourceMeta: [] };
+  }
+
+  /**
+   * Parses a rollout file, either fully (resume undefined) or from the byte
+   * offset captured in `resume`. Returns the next parse state, or undefined
+   * when a resumed parse turned out to be invalid and the caller must reparse
+   * the whole file.
+   */
+  private async parseJsonl(
+    filePath: string,
+    result: AdapterImportResult,
+    readAt: string,
+    resume: CodexParseState | undefined,
+  ): Promise<CodexParseState | undefined> {
+    const meta = sourceMeta(filePath, "jsonl", readAt);
+    result.sourceMeta.push(meta);
+    const context: CodexFileContext = resume
+      ? {
+          sessionId: resume.context.sessionId,
+          currentModel: resume.context.currentModel,
+          models: new Set(resume.context.models),
+          lastTotalUsage: resume.context.lastTotalUsage ? { ...resume.context.lastTotalUsage } : undefined,
+        }
+      : {
+          sessionId: path.basename(filePath, path.extname(filePath)),
+          models: new Set(),
+        };
+    const records: PendingCodexRecord[] = [];
+    const handleLine = (line: string, lineNumber: number): void => {
+      if (!line.trim() || isPrefilteredCodexLine(line)) {
+        return;
+      }
+      const row = parseJsonLine(line, filePath, lineNumber, result, this.provider);
+      if (row === undefined) {
+        return;
+      }
+      this.addCodexRecord(row, filePath, meta, result, lineNumber, context, records);
+    };
+
+    let stream;
+    try {
+      stream = await streamJsonlLines(filePath, handleLine, {
+        start: resume?.parsedBytes ?? 0,
+        lineNumberBase: resume?.lineCount ?? 0,
+      });
+    } catch (error) {
+      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+      return undefined;
+    }
+
+    // Parity with the previous reader, which emitted the unterminated last
+    // line: process it in both full and resume mode so a crashed session's
+    // final record still counts. A processed tail poisons incremental resume
+    // (the completed line would be parsed a second time), so it disables it —
+    // the next change then takes the idempotent full-reparse path.
+    let processedPartialTail = false;
+    if (stream.partialTail !== undefined) {
+      handleLine(stream.partialTail, (resume?.lineCount ?? 0) + stream.lineCount + 1);
+      processedPartialTail = true;
+    }
+
+    if (!resume && !stream.sawContent) {
       result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
-      return;
+      return {
+        parsedBytes: stream.parsedBytes,
+        tailHash: stream.tailHash,
+        lineCount: stream.lineCount,
+        allowIncremental: true,
+        context: serializeCodexContext(context),
+      };
+    }
+
+    if (resume && !modelsUnchanged(resume.context.models, context.models)) {
+      // Any change to the model set (including 0 -> 1) alters the model
+      // backfill applied to records parsed earlier, so the whole file must be
+      // reparsed for those records to come out right.
+      return undefined;
     }
 
     const inferredModel = context.models.size === 1 ? [...context.models][0] : undefined;
@@ -75,6 +165,14 @@ export class CodexUsageAdapter extends JsonUsageAdapter {
         sessionId: record.sessionId ?? context.sessionId,
       })),
     );
+
+    return {
+      parsedBytes: stream.parsedBytes,
+      tailHash: stream.tailHash,
+      lineCount: (resume?.lineCount ?? 0) + stream.lineCount,
+      allowIncremental: !processedPartialTail,
+      context: serializeCodexContext(context),
+    };
   }
 
   private addCodexRecord(
@@ -156,6 +254,84 @@ export class CodexUsageAdapter extends JsonUsageAdapter {
       context.sessionId = sessionId;
     }
   }
+}
+
+// Rollout bulk lines (assistant output, tool transcripts) carry no usage or
+// context fields and account for ~90% of file bytes. Lines whose top-level
+// type marks them as bulk are skipped before JSON.parse unless they mention a
+// field the parser would actually read (conservative substring guard).
+const prefilterSkippableTypes = new Set(["compacted", "response_item"]);
+const prefilterContextPattern = /"(model|usage|sessionId|session_id|conversationId|conversation_id|uuid)"\s*:/;
+
+function isPrefilteredCodexLine(line: string): boolean {
+  const typeIndex = line.indexOf('"type":"');
+  if (typeIndex === -1 || typeIndex > 80) {
+    return false;
+  }
+  const typeEnd = line.indexOf('"', typeIndex + 8);
+  if (typeEnd === -1) {
+    return false;
+  }
+  const type = line.slice(typeIndex + 8, typeEnd);
+  if (!prefilterSkippableTypes.has(type)) {
+    return false;
+  }
+  return !prefilterContextPattern.test(line);
+}
+
+function serializeCodexContext(context: CodexFileContext): CodexParseState["context"] {
+  return {
+    sessionId: context.sessionId,
+    currentModel: context.currentModel,
+    models: [...context.models].sort(),
+    lastTotalUsage: context.lastTotalUsage ? { ...context.lastTotalUsage } : undefined,
+  };
+}
+
+function modelsUnchanged(prior: string[], current: Set<string>): boolean {
+  if (prior.length !== current.size) {
+    return false;
+  }
+  return prior.every((model) => current.has(model));
+}
+
+function validateCodexParseState(value: unknown): CodexParseState | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const candidate = value as Partial<CodexParseState>;
+  const context = candidate.context;
+  if (
+    !Number.isSafeInteger(candidate.parsedBytes) ||
+    (candidate.parsedBytes as number) < 0 ||
+    typeof candidate.tailHash !== "string" ||
+    !Number.isSafeInteger(candidate.lineCount) ||
+    (candidate.lineCount as number) < 0 ||
+    typeof candidate.allowIncremental !== "boolean" ||
+    typeof context !== "object" ||
+    context === null ||
+    typeof context.sessionId !== "string" ||
+    (context.currentModel !== undefined && typeof context.currentModel !== "string") ||
+    !Array.isArray(context.models) ||
+    context.models.some((model) => typeof model !== "string") ||
+    !validOptionalCounts(context.lastTotalUsage)
+  ) {
+    return undefined;
+  }
+  return candidate as CodexParseState;
+}
+
+function validOptionalCounts(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return (["input", "cachedInput", "output"] as const).every((key) => {
+    const count = (value as Record<string, unknown>)[key];
+    return count === undefined || (typeof count === "number" && Number.isFinite(count));
+  });
 }
 
 function parseJsonLine(

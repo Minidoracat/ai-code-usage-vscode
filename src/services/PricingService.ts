@@ -2,16 +2,24 @@ import { addCost, roundCurrency, tokenTotal } from "../domain/math";
 import type { CostEstimate, PricingCatalog, PricingRule, UsageCost, UsageRecord } from "../domain/types";
 
 export class PricingService {
-  public constructor(private readonly catalog: PricingCatalog) {}
+  private readonly metadata: ReturnType<typeof validatePricingMetadata>;
+  // Rules with effectiveFrom/effectiveTo depend on the record instant, so the
+  // lookup cache is only safe while the catalog has no dated rules.
+  private readonly cacheableRules: boolean;
+  private readonly ruleCache = new Map<string, PricingRule | undefined>();
+
+  public constructor(private readonly catalog: PricingCatalog) {
+    this.metadata = validatePricingMetadata(catalog);
+    this.cacheableRules = this.metadata.ok && !catalog.rules.some((rule) => rule.effectiveFrom || rule.effectiveTo);
+  }
 
   public estimate(record: UsageRecord): CostEstimate {
     if (record.cost) {
       return { available: true, cost: record.cost };
     }
 
-    const metadata = validatePricingMetadata(this.catalog);
-    if (!metadata.ok) {
-      return { available: false, reason: metadata.reason };
+    if (!this.metadata.ok) {
+      return { available: false, reason: this.metadata.reason };
     }
 
     if (!record.model) {
@@ -22,7 +30,7 @@ export class PricingService {
       return { available: false, reason: "missing_tokens" };
     }
 
-    const rule = findPricingRule(this.catalog.rules, record.provider, record.model, pricingInstant(record));
+    const rule = this.lookupRule(record);
     if (!rule) {
       return { available: false, reason: "unknown_model" };
     }
@@ -52,6 +60,19 @@ export class PricingService {
         checkedAt: rule.checkedAt,
       },
     };
+  }
+
+  private lookupRule(record: UsageRecord): PricingRule | undefined {
+    if (!this.cacheableRules || !record.model) {
+      return findPricingRule(this.catalog.rules, record.provider, record.model ?? "", pricingInstant(record));
+    }
+    const key = `${record.provider}:${record.model.toLowerCase()}`;
+    if (this.ruleCache.has(key)) {
+      return this.ruleCache.get(key);
+    }
+    const rule = findPricingRule(this.catalog.rules, record.provider, record.model);
+    this.ruleCache.set(key, rule);
+    return rule;
   }
 }
 

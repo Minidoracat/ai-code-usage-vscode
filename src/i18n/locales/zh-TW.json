@@ -150,5 +150,9 @@
   "modal.selectUsageFolder": "選擇 {provider} usage folder",
   "modal.detectedSources": "AI Coding Usage 已找到並套用本機 usage 來源：\n{summary}",
   "modal.invalidPaths": "AI Coding Usage 已忽略看起來不屬於這台機器的 usage paths：\n{summary}",
-  "modal.noSources": "AI Coding Usage 在這台機器上找不到 Claude Code 或 Codex usage paths。請設定 usage paths 才能載入資料。"
+  "modal.noSources": "AI Coding Usage 在這台機器上找不到 Claude Code 或 Codex usage paths。請設定 usage paths 才能載入資料。",
+  "range.invalidCustom": "自訂日期無效：開始日期不可晚於結束日期，且年份需為 2000 年以後。",
+  "state.backgroundRefresh": "仍在背景更新中，完成後儀表板會自動顯示。",
+  "modal.rebuildCacheConfirm": "要重建快取嗎？所有 usage 檔案會重新解析；資料量大時可能需要數十秒到數分鐘。",
+  "modal.rebuildCacheProceed": "重建"
 }

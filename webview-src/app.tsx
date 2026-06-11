@@ -27,9 +27,19 @@ import {
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
+  getState(): { dashboardState?: DashboardState; protocolVersion?: number } | undefined;
+  setState(state: { dashboardState?: DashboardState; protocolVersion?: number }): void;
 };
 
 const vscodeApi = acquireVsCodeApi();
+
+// A pending request is cleared by the next usageData/error message; if the
+// host is busy with a long import, this watchdog unlocks the UI instead and
+// lets the result land whenever it is ready.
+const pendingWatchdogMs = 45_000;
+// How long after the last loadingData event the progress strip stays visible.
+const loadingActivityWindowMs = 3_000;
+const minimumCustomDate = "2000-01-01";
 const ranges: readonly TimeRangeKind[] = timeRangeKinds;
 const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex"];
 const localePreferences: DashboardLocalePreference[] = ["auto", "en", "zh-TW", "zh-CN", "ja", "ko"];
@@ -60,8 +70,11 @@ type PendingRequest = {
 };
 
 function Dashboard() {
-  const [state, setState] = useState<DashboardState>();
+  // Restoring the persisted snapshot keeps data on screen across webview
+  // reloads instead of a minutes-long empty loading page during slow imports.
+  const [state, setState] = useState<DashboardState | undefined>(() => restorePersistedState());
   const [loadingState, setLoadingState] = useState<DashboardLoadingState>(() => readInitialLoadingState());
+  const [loadingActive, setLoadingActive] = useState(false);
   const [error, setError] = useState<string>();
   const [chartMetric, setChartMetric] = useState<ChartMetric>("cost");
   const [chartSize, setChartSize] = useState<ChartSize>("compact");
@@ -70,6 +83,13 @@ function Dashboard() {
   const [customAutoRefreshInput, setCustomAutoRefreshInput] = useState("300");
   const [customTimeZoneInput, setCustomTimeZoneInput] = useState("Asia/Taipei");
   const [pendingRequest, setPendingRequest] = useState<PendingRequest>();
+  const [draftStart, setDraftStart] = useState<string>();
+  const [draftEnd, setDraftEnd] = useState<string>();
+  const [rangeError, setRangeError] = useState(false);
+  const watchdogRef = useRef<number>();
+  const loadingActivityRef = useRef<number>();
+  // Mirror of pendingRequest for the message handler, whose closure is bound once.
+  const pendingRef = useRef<PendingRequest>();
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<ExtensionMessage>) => {
@@ -81,13 +101,30 @@ function Dashboard() {
         setState(message.payload);
         setError(undefined);
         setPendingRequest(undefined);
+        setLoadingActive(false);
+        if (pendingRef.current?.type === "setRange") {
+          // Only a completed range request resets the drafts; broadcasts from
+          // auto-refresh must not clobber dates the user is still editing.
+          setDraftStart(undefined);
+          setDraftEnd(undefined);
+          setRangeError(false);
+        }
+        pendingRef.current = undefined;
+        window.clearTimeout(watchdogRef.current);
+        window.clearTimeout(loadingActivityRef.current);
+        vscodeApi.setState({ dashboardState: persistableState(message.payload), protocolVersion: webviewProtocolVersion });
       }
       if (message.type === "loadingData") {
         setLoadingState(message.payload);
+        setLoadingActive(true);
+        window.clearTimeout(loadingActivityRef.current);
+        loadingActivityRef.current = window.setTimeout(() => setLoadingActive(false), loadingActivityWindowMs);
       }
       if (message.type === "error") {
         setError(message.payload.message);
         setPendingRequest(undefined);
+        pendingRef.current = undefined;
+        window.clearTimeout(watchdogRef.current);
       }
     };
 
@@ -109,6 +146,13 @@ function Dashboard() {
     }
   }, [state?.timeZone.customTimeZone, state?.timeZone.resolvedTimeZone]);
 
+  // Stable identity per messages object so the chart effect's translate dep
+  // does not invalidate (and rebuild uPlot) on every render.
+  const stateMessages = state?.messages;
+  const translate = useMemo(() => {
+    return (key: string) => (stateMessages ? (stateMessages[key] ?? key) : key);
+  }, [stateMessages]);
+
   if (!state) {
     return <InitialLoading state={loadingState} error={error} />;
   }
@@ -116,7 +160,6 @@ function Dashboard() {
   const summary = state.summary;
   const hasRecords = summary.totals.records > 0;
   const locale = state.locale;
-  const messages = state.messages;
   const timeZone = state.timeZone;
   const isPending = Boolean(pendingRequest);
   const activeRange = pendingRequest?.type === "setRange" && pendingRequest.rangeKind ? pendingRequest.rangeKind : summary.range.kind;
@@ -129,7 +172,6 @@ function Dashboard() {
       : state.autoRefreshIntervalSeconds;
   const customTimeZoneValid = isValidTimeZoneName(customTimeZoneInput);
 
-  const translate = (key: string) => messages[key] ?? key;
   const send = (
     type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone",
     payload?: unknown,
@@ -137,6 +179,17 @@ function Dashboard() {
   ) => {
     const requestId = createRequestId(type);
     setPendingRequest({ requestId, type, ...pending });
+    pendingRef.current = { requestId, type, ...pending };
+    window.clearTimeout(watchdogRef.current);
+    watchdogRef.current = window.setTimeout(() => {
+      setPendingRequest(undefined);
+      pendingRef.current = undefined;
+      const message = translate("state.backgroundRefresh");
+      setNotice(message);
+      window.setTimeout(() => {
+        setNotice((current) => (current === message ? undefined : current));
+      }, 5000);
+    }, pendingWatchdogMs);
     vscodeApi.postMessage({
       requestId,
       type,
@@ -144,10 +197,20 @@ function Dashboard() {
       payload,
     });
   };
+  const customStart = draftStart ?? summary.range.startDate;
+  const customEnd = draftEnd ?? summary.range.endDate;
+  const customRangeValid = isValidCustomRange(customStart, customEnd);
   const setRange = (kind: TimeRangeKind) => {
-    const start = document.querySelector<HTMLInputElement>("#startDate")?.value;
-    const end = document.querySelector<HTMLInputElement>("#endDate")?.value;
-    send("setRange", { kind, start, end }, { rangeKind: kind });
+    if (kind !== "custom") {
+      send("setRange", { kind }, { rangeKind: kind });
+      return;
+    }
+    if (!customRangeValid) {
+      setRangeError(true);
+      return;
+    }
+    setRangeError(false);
+    send("setRange", { kind, start: customStart, end: customEnd }, { rangeKind: kind });
   };
   const setProvider = (provider: UsageProviderFilter) => send("setProvider", { provider }, { provider });
   const setLocale = (locale: DashboardLocalePreference) => send("setLocale", { locale }, { locale });
@@ -203,7 +266,7 @@ function Dashboard() {
             <select
               aria-label={translate("locale.label")}
               value={activeLocale}
-              disabled={isPending}
+              
               onChange={(event) => setLocale((event.currentTarget as HTMLSelectElement).value as DashboardLocalePreference)}
             >
               {localePreferences.map((locale) => (
@@ -216,7 +279,7 @@ function Dashboard() {
             type="button"
             title={copyBusy ? translate("state.copyingScreenshot") : translate("action.copyScreenshot")}
             aria-label={translate("action.copyScreenshot")}
-            disabled={isPending || copyBusy}
+            disabled={copyBusy}
             onClick={() => void copyScreenshot()}
           >
             <CopyIcon />
@@ -226,7 +289,7 @@ function Dashboard() {
             type="button"
             title={translate("action.refresh")}
             aria-label={translate("action.refresh")}
-            disabled={isPending}
+            
             onClick={() => send("refresh")}
           >
             <RefreshIcon />
@@ -247,7 +310,7 @@ function Dashboard() {
         </div>
       </header>
 
-      {isPending ? (
+      {isPending || loadingActive ? (
         <RefreshProgress state={loadingState} translate={translate} locale={locale} />
       ) : null}
 
@@ -258,7 +321,7 @@ function Dashboard() {
               class={classNames("segmented", activeRange === kind && "active", pendingRequest?.type === "setRange" && pendingRequest.rangeKind === kind && "pending")}
               type="button"
               data-range={kind}
-              disabled={isPending}
+              
               onClick={() => setRange(kind)}
             >
               {translate(`range.${kind}`)}
@@ -268,12 +331,41 @@ function Dashboard() {
         <div class="custom-row">
           <label>
             <span>{translate("field.startDate")}</span>
-            <input id="startDate" type="date" value={summary.range.startDate} disabled={isPending} onChange={() => setRange("custom")} />
+            <input
+              id="startDate"
+              type="date"
+              value={customStart}
+              min={minimumCustomDate}
+              max={customEnd}
+              onInput={(event) => {
+                setDraftStart((event.currentTarget as HTMLInputElement).value);
+                setRangeError(false);
+              }}
+            />
           </label>
           <label>
             <span>{translate("field.endDate")}</span>
-            <input id="endDate" type="date" value={summary.range.endDate} disabled={isPending} onChange={() => setRange("custom")} />
+            <input
+              id="endDate"
+              type="date"
+              value={customEnd}
+              min={draftStart ?? minimumCustomDate}
+              onInput={(event) => {
+                setDraftEnd((event.currentTarget as HTMLInputElement).value);
+                setRangeError(false);
+              }}
+            />
           </label>
+          <button
+            class={classNames("provider-filter-button", pendingRequest?.type === "setRange" && pendingRequest.rangeKind === "custom" && "pending")}
+            type="button"
+            disabled={isPending || !customRangeValid}
+            title={customRangeValid ? translate("range.custom") : translate("range.invalidCustom")}
+            onClick={() => setRange("custom")}
+          >
+            {translate("action.apply")}
+          </button>
+          {rangeError || !customRangeValid ? <span class="range-invalid-hint">{translate("range.invalidCustom")}</span> : null}
         </div>
         <div class="timezone-row" aria-label={translate("timezone.label")}>
           <div class="timezone-current">
@@ -289,7 +381,7 @@ function Dashboard() {
                   pendingRequest?.type === "setTimeZone" && pendingRequest.timeZoneMode === mode && "pending",
                 )}
                 type="button"
-                disabled={isPending}
+                
                 onClick={() => setTimeZone(mode)}
               >
                 {translate(`timezone.${mode}`)}
@@ -300,7 +392,7 @@ function Dashboard() {
                 type="text"
                 value={customTimeZoneInput}
                 placeholder={translate("timezone.customPlaceholder")}
-                disabled={isPending}
+                
                 aria-label={translate("timezone.custom")}
                 spellcheck={false}
                 onInput={(event) => setCustomTimeZoneInput((event.currentTarget as HTMLInputElement).value)}
@@ -312,7 +404,7 @@ function Dashboard() {
                   pendingRequest?.type === "setTimeZone" && pendingRequest.timeZoneMode === "custom" && "pending",
                 )}
                 type="button"
-                disabled={isPending || !customTimeZoneValid}
+                disabled={!customTimeZoneValid}
                 title={customTimeZoneValid ? translate("timezone.custom") : translate("timezone.invalid")}
                 onClick={() => setTimeZone("custom", customTimeZoneInput.trim())}
               >
@@ -328,7 +420,7 @@ function Dashboard() {
               <button
                 class={classNames("provider-filter-button", activeProvider === provider && "active", provider !== "all" && `provider-${provider}`)}
                 type="button"
-                disabled={isPending}
+                
                 onClick={() => setProvider(provider)}
               >
                 {provider === "all" ? translate("filter.all") : <ProviderBadge provider={provider} />}
@@ -355,7 +447,7 @@ function Dashboard() {
                       "pending",
                   )}
                   type="button"
-                  disabled={isPending}
+                  
                   onClick={() => setAutoRefresh(intervalSeconds)}
                 >
                   {autoRefreshLabel(intervalSeconds, translate)}
@@ -370,7 +462,7 @@ function Dashboard() {
                 max="86400"
                 step="30"
                 value={customAutoRefreshInput}
-                disabled={isPending}
+                
                 aria-label={translate("refresh.customSeconds")}
                 onInput={(event) => setCustomAutoRefreshInput((event.currentTarget as HTMLInputElement).value)}
               />
@@ -382,7 +474,7 @@ function Dashboard() {
                     "active",
                 )}
                 type="button"
-                disabled={isPending || parseAutoRefreshSeconds(customAutoRefreshInput) === undefined}
+                disabled={parseAutoRefreshSeconds(customAutoRefreshInput) === undefined}
                 onClick={() => setAutoRefresh(parseAutoRefreshSeconds(customAutoRefreshInput) ?? 300)}
               >
                 {translate("action.apply")}
@@ -1130,7 +1222,7 @@ function formatCost(cost: UsageCost | undefined, locale: string, translate: (key
     return translate("state.unavailable");
   }
 
-  const formatted = `${cost.currency} ${new Intl.NumberFormat(locale, {
+  const formatted = `${cost.currency} ${cachedNumberFormat(locale, {
     maximumFractionDigits: cost.amount < 1 ? 4 : 2,
   }).format(cost.amount)}`;
 
@@ -1211,7 +1303,7 @@ function formatPricingRate(rate: number, currency: string, locale: string): stri
 }
 
 function formatRateAmount(rate: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: rate < 1 ? 4 : 2 }).format(rate);
+  return cachedNumberFormat(locale, { maximumFractionDigits: rate < 1 ? 4 : 2 }).format(rate);
 }
 
 function formatAliases(aliases: string[], translate: (key: string) => string): string {
@@ -1238,22 +1330,48 @@ function validDateOrUndefined(value: string | undefined): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
+// Intl formatter construction costs ~0.1ms each; the session table alone calls
+// these formatters thousands of times per render, so instances are cached by
+// locale + options (a small, bounded set of combinations).
+const numberFormatCache = new Map<string, Intl.NumberFormat>();
+const dateFormatCache = new Map<string, Intl.DateTimeFormat>();
+
+function cachedNumberFormat(locale: string, options?: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options ?? {})}`;
+  let formatter = numberFormatCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, options);
+    numberFormatCache.set(key, formatter);
+  }
+  return formatter;
+}
+
+function cachedDateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = dateFormatCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dateFormatCache.set(key, formatter);
+  }
+  return formatter;
+}
+
 function formatNumber(value: number | undefined, locale: string): string {
-  return new Intl.NumberFormat(locale).format(value ?? 0);
+  return cachedNumberFormat(locale).format(value ?? 0);
 }
 
 function formatAverage(total: number, count: number, locale: string): string {
   if (count <= 0) {
     return formatNumber(0, locale);
   }
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: total / count < 10 ? 1 : 0 }).format(total / count);
+  return cachedNumberFormat(locale, { maximumFractionDigits: total / count < 10 ? 1 : 0 }).format(total / count);
 }
 
 function formatPercent(value: number, total: number, locale: string): string {
   if (total <= 0) {
-    return new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 }).format(0);
+    return cachedNumberFormat(locale, { style: "percent", maximumFractionDigits: 0 }).format(0);
   }
-  return new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / total);
+  return cachedNumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / total);
 }
 
 function formatDate(value: string | undefined, locale: string, timeZone: string): string {
@@ -1264,7 +1382,7 @@ function formatDate(value: string | undefined, locale: string, timeZone: string)
   if (Number.isNaN(date.getTime())) {
     return value.slice(0, 10);
   }
-  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", timeZone }).format(date);
+  return cachedDateFormat(locale, { month: "short", day: "numeric", timeZone }).format(date);
 }
 
 function formatDateTime(value: string | undefined, locale: string, timeZone: string): string {
@@ -1275,7 +1393,7 @@ function formatDateTime(value: string | undefined, locale: string, timeZone: str
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat(locale, {
+  return cachedDateFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -1317,7 +1435,7 @@ function formatDuration(start: string | undefined, end: string | undefined, tran
 }
 
 function formatShortDate(value: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric", timeZone: "UTC" }).format(new Date(value * 1000));
+  return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: "UTC" }).format(new Date(value * 1000));
 }
 
 function dateKeyTimestamp(value: string): number {
@@ -1328,23 +1446,87 @@ function dateKeyTimestamp(value: string): number {
   return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 1000);
 }
 
+const timeZoneValidityCache = new Map<string, boolean>();
+
 function isValidTimeZoneName(value: string): boolean {
-  if (value.trim().length === 0) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
     return false;
   }
+  const cached = timeZoneValidityCache.get(trimmed);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let valid = false;
   try {
-    new Intl.DateTimeFormat("en", { timeZone: value.trim() }).format(new Date());
-    return true;
+    new Intl.DateTimeFormat("en", { timeZone: trimmed }).format(new Date());
+    valid = true;
   } catch {
+    valid = false;
+  }
+  timeZoneValidityCache.set(trimmed, valid);
+  return valid;
+}
+
+function isValidCustomRange(start: string | undefined, end: string | undefined): boolean {
+  if (!start || !end) {
     return false;
   }
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(start) || !pattern.test(end)) {
+    return false;
+  }
+  return start >= minimumCustomDate && end >= start;
+}
+
+function restorePersistedState(): DashboardState | undefined {
+  try {
+    const persisted = vscodeApi.getState();
+    if (!persisted || persisted.protocolVersion !== webviewProtocolVersion) {
+      return undefined;
+    }
+    const candidate = persisted.dashboardState;
+    if (!candidate?.summary?.totals || !candidate.messages || !candidate.summary.range) {
+      return undefined;
+    }
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Trims the dashboard payload before vscode setState persistence: keep enough
+ * sessions per provider for the table's prioritized view and cap diagnostics,
+ * so the snapshot stays well under the webview state size limits.
+ */
+function persistableState(payload: DashboardState): DashboardState {
+  const perProvider = new Map<string, number>();
+  const sessions = payload.summary.sessions.filter((session) => {
+    const count = perProvider.get(session.provider) ?? 0;
+    if (count >= 60) {
+      return false;
+    }
+    perProvider.set(session.provider, count + 1);
+    return true;
+  });
+  return {
+    ...payload,
+    summary: {
+      ...payload.summary,
+      sessions,
+      warnings: payload.summary.warnings.slice(0, 20),
+      errors: payload.summary.errors.slice(0, 20),
+      sourceMeta: [],
+    },
+  };
 }
 
 function formatChartValue(value: number, metric: ChartMetric, locale: string): string {
   if (metric === "cost") {
-    return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }).format(value);
+    return cachedNumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }).format(value);
   }
-  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return cachedNumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 function chartHeight(width: number, size: ChartSize): number {
