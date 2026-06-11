@@ -44,6 +44,73 @@ export function zonedDateKey(date: Date, timeZone: string): string {
   return dateKey(parts.year, parts.month, parts.day);
 }
 
+const maxPrecomputedBucketDays = 4_000;
+
+/**
+ * Precomputes local-day boundaries for a date-key range so per-record bucketing
+ * is a binary search instead of an Intl.DateTimeFormat round-trip (~150µs each).
+ * Timestamps outside the precomputed window fall back to zonedDateKey.
+ */
+export function makeZonedDayBucketer(startDate: string, endDate: string, timeZone: string): (epochMs: number) => string {
+  const keys: string[] = [];
+  const boundaries: number[] = [];
+  let lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  try {
+    // Anchor the precompute window at the range end: when the range exceeds
+    // the cap, the ancient days (which rarely hold data) fall back to the
+    // per-record path instead of the recent ones.
+    let firstKey = startDate;
+    const spanDays = Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1;
+    if (Number.isFinite(spanDays) && spanDays > maxPrecomputedBucketDays) {
+      firstKey = addDateKeyDays(endDate, -(maxPrecomputedBucketDays - 1));
+    }
+    for (let key = firstKey; key <= endDate && keys.length < maxPrecomputedBucketDays; key = addDateKeyDays(key, 1)) {
+      keys.push(key);
+      boundaries.push(new Date(zonedDateTimeToUtcIso(key, "start", timeZone)).getTime());
+    }
+    // Exotic calendars can break the bucketing assumptions: a skipped calendar
+    // day (date-line change) makes boundaries non-monotonic, and a DST jump
+    // across midnight makes a boundary resolve into the neighbouring day.
+    // Either way the binary search would misbucket, so verify and fall back.
+    for (let index = 0; index < boundaries.length; index += 1) {
+      if (index > 0 && boundaries[index]! <= boundaries[index - 1]!) {
+        throw new Error("non-monotonic day boundaries");
+      }
+      if (zonedDateKey(new Date(boundaries[index]!), timeZone) !== keys[index]) {
+        throw new Error("day boundary resolves outside its own day");
+      }
+    }
+    if (keys.length > 0) {
+      lastBoundaryEnd = new Date(zonedDateTimeToUtcIso(keys[keys.length - 1]!, "end", timeZone)).getTime();
+    }
+  } catch {
+    // Invalid date keys or broken boundary assumptions: leave the precomputed
+    // window empty so every timestamp takes the per-record fallback below.
+    keys.length = 0;
+    boundaries.length = 0;
+    lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  }
+
+  return (epochMs: number): string => {
+    if (keys.length === 0 || epochMs < boundaries[0]! || epochMs > lastBoundaryEnd) {
+      return zonedDateKey(new Date(epochMs), timeZone);
+    }
+    let low = 0;
+    let high = boundaries.length - 1;
+    let found = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (boundaries[mid]! <= epochMs) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return keys[found]!;
+  };
+}
+
 export function zonedDateTimeToUtcIso(date: string, side: "start" | "end", timeZone: string): string {
   const parts = parseDateKey(date);
   const hour = side === "start" ? 0 : 23;
@@ -137,8 +204,14 @@ function zonedParts(date: Date, timeZone: string): DateParts {
   };
 }
 
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
 function dateFormatter(timeZone: string): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat("en-CA", {
+  const cached = dateFormatterCache.get(timeZone);
+  if (cached) {
+    return cached;
+  }
+  const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     hourCycle: "h23",
     year: "numeric",
@@ -148,6 +221,8 @@ function dateFormatter(timeZone: string): Intl.DateTimeFormat {
     minute: "2-digit",
     second: "2-digit",
   });
+  dateFormatterCache.set(timeZone, formatter);
+  return formatter;
 }
 
 function parseDateKey(value: string): { year: number; month: number; day: number } {

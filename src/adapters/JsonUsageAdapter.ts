@@ -10,8 +10,11 @@ import type {
   UsageProvider,
   UsageRecord,
 } from "../domain/types";
+import { streamJsonlLines } from "./jsonlStream";
 
-export const jsonUsageParserVersion = "local-json-v4-codex-stream";
+// Bump whenever parsing or diagnostic semantics change so stale caches (and
+// their persisted warnings) invalidate automatically on upgrade.
+export const jsonUsageParserVersion = "local-json-v5-incremental";
 const maxDirectoryDepth = 6;
 const maxFilesPerSource = 10_000;
 const directoryReadConcurrency = 8;
@@ -32,6 +35,14 @@ export type UsageFileListResult = {
   warnings: ImportIssue[];
   errors: ImportIssue[];
   sourceMeta: SourceMeta[];
+};
+
+export type UsageFileParseOutcome = {
+  result: AdapterImportResult;
+  /** Adapter-specific resumable parse state, JSON-serializable for the cache. */
+  state?: unknown;
+  /** True when `result` holds only the records appended since `prior`. */
+  appended?: boolean;
 };
 
 export abstract class JsonUsageAdapter implements UsageAdapter {
@@ -93,6 +104,15 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     };
     await this.readFile(filePath, result, readAt);
     return result;
+  }
+
+  /**
+   * Like importUsageFile, but lets adapters resume append-only files from a
+   * prior parse state instead of re-reading the whole file. The base
+   * implementation has no incremental support and always parses fully.
+   */
+  public async importUsageFileWithState(filePath: string, _prior?: unknown, readAt = new Date().toISOString()): Promise<UsageFileParseOutcome> {
+    return { result: await this.importUsageFile(filePath, readAt) };
   }
 
   private async collectFiles(usagePath: string, result: UsageFileListResult, readAt: string): Promise<UsageFileRef[]> {
@@ -175,6 +195,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     const meta = sourceMeta(filePath, kind, readAt);
     result.sourceMeta.push(meta);
 
+    if (kind === "jsonl") {
+      await this.readJsonLinesStreaming(filePath, meta, result);
+      return;
+    }
+
     let content = "";
     try {
       content = await fs.readFile(filePath, "utf8");
@@ -185,11 +210,6 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
 
     if (content.trim().length === 0) {
       result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
-      return;
-    }
-
-    if (kind === "jsonl") {
-      this.readJsonLines(content, filePath, meta, result);
       return;
     }
 
@@ -212,19 +232,36 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
   }
 
-  private readJsonLines(content: string, filePath: string, meta: SourceMeta, result: AdapterImportResult): void {
-    const lines = content.split(/\r?\n/);
+  private async readJsonLinesStreaming(filePath: string, meta: SourceMeta, result: AdapterImportResult): Promise<void> {
     const rows: Array<{ line: number; row: unknown }> = [];
-    lines.forEach((line, index) => {
+    const collectLine = (line: string, lineNumber: number): void => {
       if (!line.trim()) {
         return;
       }
       try {
-        rows.push({ line: index + 1, row: JSON.parse(line) as unknown });
+        rows.push({ line: lineNumber, row: JSON.parse(line) as unknown });
       } catch (error) {
-        result.errors.push(issue("error", "malformed_jsonl", errorMessage(error), filePath, this.provider, index + 1));
+        result.errors.push(issue("error", "malformed_jsonl", errorMessage(error), filePath, this.provider, lineNumber));
       }
-    });
+    };
+
+    let sawContent = false;
+    try {
+      const stream = await streamJsonlLines(filePath, collectLine);
+      sawContent = stream.sawContent;
+      if (stream.partialTail !== undefined) {
+        collectLine(stream.partialTail, stream.lineCount + 1);
+      }
+    } catch (error) {
+      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+      return;
+    }
+
+    if (!sawContent) {
+      result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
+      return;
+    }
+
     const context = createFileContext(
       filePath,
       inferSingleModel(rows.map((entry) => entry.row)),

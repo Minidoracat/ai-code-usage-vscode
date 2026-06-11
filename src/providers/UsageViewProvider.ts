@@ -33,6 +33,13 @@ import {
   type DashboardLocalePreference,
 } from "../webview/protocol";
 
+type RefreshOptions = {
+  allowSourcePrompt?: boolean;
+  forceImport?: boolean;
+  /** Reuse the previous import when range and sources are unchanged (filter/locale-only changes). */
+  reuseImports?: boolean;
+};
+
 export class UsageViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "aiCodingUsage.dashboard";
   private static readonly panelType = "aiCodingUsage.dashboardPanel";
@@ -47,9 +54,21 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private noSourcePromptShown = false;
   private readonly cachedImporter: CachedUsageImporter;
   private autoRefreshTimer?: ReturnType<typeof setTimeout>;
-  private autoRefreshInProgress = false;
   private refreshRun = 0;
   private customRange: { start?: string; end?: string } = {};
+  // Single-flight refresh arbitration: at most one refresh executes at a time;
+  // requests arriving meanwhile coalesce into one trailing rerun instead of
+  // racing the in-flight run and discarding its result.
+  private inflightRefresh?: Promise<void>;
+  private trailingRefresh?: RefreshOptions;
+  // Config updates initiated by webview handlers also fire the configuration
+  // listener; this counter suppresses the listener's duplicate refresh.
+  private suppressConfigRefresh = 0;
+  private lastLoad?: { key: string; imports: Awaited<ReturnType<CachedUsageImporter["loadForRange"]>> };
+  // Replayed into newly opened webviews so a reopened panel shows the last
+  // known data immediately instead of a bare loading page. The timestamp keeps
+  // replays from claiming hours-old data was just refreshed.
+  private lastSummary?: { summary: UsageSummary; at: string };
 
   public constructor(private readonly context: vscode.ExtensionContext) {
     this.cachedImporter = new CachedUsageImporter(vscode.Uri.joinPath(this.context.globalStorageUri, "usage-cache", "v1").fsPath);
@@ -72,10 +91,14 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         }
         if (event.affectsConfiguration("aiCodingUsage.autoRefreshIntervalSeconds")) {
           this.configureAutoRefresh();
-          void this.refresh({ allowSourcePrompt: false });
+          if (this.suppressConfigRefresh === 0) {
+            void this.refresh({ allowSourcePrompt: false });
+          }
         }
         if (event.affectsConfiguration("aiCodingUsage.timeZoneMode") || event.affectsConfiguration("aiCodingUsage.customTimeZone")) {
-          void this.refresh({ allowSourcePrompt: false });
+          if (this.suppressConfigRefresh === 0) {
+            void this.refresh({ allowSourcePrompt: false });
+          }
         }
       }),
     );
@@ -88,6 +111,9 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.options = this.webviewOptions();
     webviewView.webview.html = renderDashboardHtml(webviewView.webview, this.context.extensionUri, this.loadingState("starting"));
     webviewView.webview.onDidReceiveMessage((message) => void this.handleMessage(message, webviewView.webview));
+    if (this.lastSummary) {
+      void this.postUsageData(webviewView.webview, this.lastSummary.summary, this.lastSummary.at);
+    }
     void this.refresh({ allowSourcePrompt: true });
   }
 
@@ -95,19 +121,48 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     await this.openDashboardPanel();
   }
 
-  public async refresh(options: { allowSourcePrompt?: boolean; forceImport?: boolean } = {}): Promise<void> {
+  public async refresh(options: RefreshOptions = {}): Promise<void> {
+    if (this.inflightRefresh) {
+      this.trailingRefresh = {
+        allowSourcePrompt: Boolean(this.trailingRefresh?.allowSourcePrompt) || Boolean(options.allowSourcePrompt),
+        forceImport: Boolean(this.trailingRefresh?.forceImport) || Boolean(options.forceImport),
+        reuseImports: (this.trailingRefresh ? Boolean(this.trailingRefresh.reuseImports) : true) && Boolean(options.reuseImports),
+      };
+      return this.inflightRefresh;
+    }
+
+    const loop = (async () => {
+      let current: RefreshOptions | undefined = options;
+      while (current) {
+        await this.refreshOnce(current);
+        current = this.trailingRefresh;
+        this.trailingRefresh = undefined;
+      }
+    })();
+    this.inflightRefresh = loop.finally(() => {
+      this.inflightRefresh = undefined;
+    });
+    return this.inflightRefresh;
+  }
+
+  private async refreshOnce(options: RefreshOptions): Promise<void> {
     const run = ++this.refreshRun;
     this.initializeRangeFromConfig();
     await this.postLoadingData("detectingSources", run);
     try {
       const summary = await this.loadSummary(options, run);
-      if (run !== this.refreshRun) {
+      if (this.trailingRefresh) {
+        // A newer request is queued; let its (cache-warm) rerun publish instead
+        // of flashing this now-superseded result.
         return;
       }
+      this.lastSummary = { summary, at: new Date().toISOString() };
       this.updateStatus(summary);
       await Promise.all(this.activeWebviews().map((webview) => this.postUsageData(webview, summary)));
     } catch (error) {
-      if (run !== this.refreshRun) {
+      // A failed load must not be replayed as fresh data by a queued rerun.
+      this.lastLoad = undefined;
+      if (this.trailingRefresh) {
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -138,10 +193,13 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       this.panel = undefined;
     });
 
+    if (this.lastSummary) {
+      void this.postUsageData(this.panel.webview, this.lastSummary.summary, this.lastSummary.at);
+    }
     await this.refresh({ allowSourcePrompt: true });
   }
 
-  private async postUsageData(webview: vscode.Webview, summary: UsageSummary): Promise<boolean> {
+  private async postUsageData(webview: vscode.Webview, summary: UsageSummary, updatedAt = new Date().toISOString()): Promise<boolean> {
     return webview.postMessage({
       type: "usageData",
       version: webviewProtocolVersion,
@@ -149,11 +207,13 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         locale: this.resolvedLocale(),
         localePreference: this.localePreference(),
         messages: messagesFor(this.resolvedLocale()),
-        updatedAt: new Date().toISOString(),
+        updatedAt,
         autoRefreshIntervalSeconds: this.autoRefreshIntervalSeconds(),
         timeZone: this.timeZoneState(),
         pricing: pricingCatalog as PricingCatalog,
-        summary,
+        // The dashboard never reads per-file sourceMeta; dropping it saves
+        // hundreds of KB per postMessage on large ranges.
+        summary: { ...summary, sourceMeta: [] },
       },
     });
   }
@@ -176,39 +236,51 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (request.type === "rebuildCache") {
+      const proceed = this.t("modal.rebuildCacheProceed");
+      const selected = await vscode.window.showWarningMessage(this.t("modal.rebuildCacheConfirm"), { modal: true }, proceed);
+      if (selected !== proceed) {
+        // Unlock the webview's pending state by replaying the latest summary,
+        // or with a cheap cache-warm refresh when none exists yet.
+        if (this.lastSummary && webview) {
+          await this.postUsageData(webview, this.lastSummary.summary, this.lastSummary.at);
+        } else {
+          await this.refresh({ allowSourcePrompt: false });
+        }
+        return;
+      }
       await this.refresh({ allowSourcePrompt: true, forceImport: true });
       return;
     }
 
     if (request.type === "setProvider") {
+      // The provider filter only affects aggregation; the import result can be reused as-is.
       this.providerFilter = request.payload.provider;
-      await this.refresh({ allowSourcePrompt: true });
+      await this.refresh({ allowSourcePrompt: true, reuseImports: true });
       return;
     }
 
     if (request.type === "setLocale") {
-      await vscode.workspace
-        .getConfiguration("aiCodingUsage")
-        .update("locale", request.payload.locale, vscode.ConfigurationTarget.Global);
-      await this.refresh({ allowSourcePrompt: true });
+      await this.updateConfigSuppressed((config) => config.update("locale", request.payload.locale, vscode.ConfigurationTarget.Global));
+      await this.refresh({ allowSourcePrompt: true, reuseImports: true });
       return;
     }
 
     if (request.type === "setAutoRefresh") {
-      await vscode.workspace
-        .getConfiguration("aiCodingUsage")
-        .update("autoRefreshIntervalSeconds", request.payload.intervalSeconds, vscode.ConfigurationTarget.Global);
+      await this.updateConfigSuppressed((config) =>
+        config.update("autoRefreshIntervalSeconds", request.payload.intervalSeconds, vscode.ConfigurationTarget.Global),
+      );
       this.configureAutoRefresh();
-      await this.refresh({ allowSourcePrompt: false });
+      await this.refresh({ allowSourcePrompt: false, reuseImports: true });
       return;
     }
 
     if (request.type === "setTimeZone") {
-      const config = vscode.workspace.getConfiguration("aiCodingUsage");
-      await config.update("timeZoneMode", request.payload.mode, vscode.ConfigurationTarget.Global);
-      if (request.payload.mode === "custom" && request.payload.customTimeZone) {
-        await config.update("customTimeZone", request.payload.customTimeZone, vscode.ConfigurationTarget.Global);
-      }
+      await this.updateConfigSuppressed(async (config) => {
+        await config.update("timeZoneMode", request.payload.mode, vscode.ConfigurationTarget.Global);
+        if (request.payload.mode === "custom" && request.payload.customTimeZone) {
+          await config.update("customTimeZone", request.payload.customTimeZone, vscode.ConfigurationTarget.Global);
+        }
+      });
       await this.refresh({ allowSourcePrompt: false });
       return;
     }
@@ -221,17 +293,41 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     await this.refresh({ allowSourcePrompt: true });
   }
 
-  private async loadSummary(options: { allowSourcePrompt?: boolean; forceImport?: boolean } = {}, run = this.refreshRun): Promise<UsageSummary> {
+  private async loadSummary(options: RefreshOptions = {}, run = this.refreshRun): Promise<UsageSummary> {
     const config = vscode.workspace.getConfiguration("aiCodingUsage");
     this.initializeRangeFromConfig();
     if (options.allowSourcePrompt) {
       await this.previewDetectedSources(config);
     }
     const range = this.resolveCurrentRange();
-    await this.postLoadingData("readingSources", run);
-    const load = await this.importUsageCached(config, range, run, Boolean(options.forceImport));
-    await this.postLoadingData("calculating", run, undefined, load.cache);
+    const loadKey = this.loadKey(config, range);
+    const reused = options.reuseImports && !options.forceImport && this.lastLoad?.key === loadKey ? this.lastLoad.imports : undefined;
+    let load = reused;
+    if (!load) {
+      await this.postLoadingData("readingSources", run);
+      load = await this.importUsageCached(config, range, run, Boolean(options.forceImport));
+      this.lastLoad = { key: loadKey, imports: load };
+    }
+    // A reused import replays no progress, so its historical cache status
+    // (e.g. "rebuilding") would be misleading in the loading strip.
+    await this.postLoadingData("calculating", run, undefined, reused ? undefined : load.cache);
     return new UsageAggregator(new PricingService(pricingCatalog as PricingCatalog)).aggregate(load.imports, range, this.providerFilter);
+  }
+
+  private loadKey(config: vscode.WorkspaceConfiguration, range: TimeRange): string {
+    const paths = this.configuredUsagePaths(config)
+      .map((source) => `${source.provider}=${source.sourcePath}`)
+      .join("|");
+    return `${range.start}|${range.end}|${paths}`;
+  }
+
+  private async updateConfigSuppressed(update: (config: vscode.WorkspaceConfiguration) => Thenable<void> | Promise<void>): Promise<void> {
+    this.suppressConfigRefresh += 1;
+    try {
+      await update(vscode.workspace.getConfiguration("aiCodingUsage"));
+    } finally {
+      this.suppressConfigRefresh -= 1;
+    }
   }
 
   public async detectLocalSources(): Promise<void> {
@@ -341,16 +437,10 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async runAutoRefresh(): Promise<void> {
-    if (this.autoRefreshInProgress) {
-      this.configureAutoRefresh();
-      return;
-    }
-
-    this.autoRefreshInProgress = true;
     try {
+      // Single-flight arbitration coalesces this with any in-flight refresh.
       await this.refresh({ allowSourcePrompt: false });
     } finally {
-      this.autoRefreshInProgress = false;
       this.configureAutoRefresh();
     }
   }
@@ -384,14 +474,32 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  private loadingStaticsRun = -1;
+  private loadingStatics?: {
+    locale: ReturnType<UsageViewProvider["resolvedLocale"]>;
+    localePreference: DashboardLocalePreference;
+    messages: ReturnType<typeof messagesFor>;
+    sources: ReturnType<UsageViewProvider["loadingSources"]>;
+    range: TimeRange;
+  };
+
   private loadingState(phase: DashboardLoadingPhase, progress?: CachedUsageProgress, cache?: CachedUsageState) {
+    // Progress events stream at ~10Hz during imports; the locale bundle,
+    // source list, and range are constant within a refresh run, so compute
+    // them once per run instead of per event.
+    if (this.loadingStaticsRun !== this.refreshRun || !this.loadingStatics) {
+      this.loadingStatics = {
+        locale: this.resolvedLocale(),
+        localePreference: this.localePreference(),
+        messages: messagesFor(this.resolvedLocale()),
+        sources: this.loadingSources(),
+        range: this.resolveCurrentRange(),
+      };
+      this.loadingStaticsRun = this.refreshRun;
+    }
     return {
-      locale: this.resolvedLocale(),
-      localePreference: this.localePreference(),
-      messages: messagesFor(this.resolvedLocale()),
+      ...this.loadingStatics,
       phase,
-      sources: this.loadingSources(),
-      range: this.resolveCurrentRange(),
       progress,
       cache,
     };
@@ -474,8 +582,12 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     }
 
     const sourcePaths = this.configuredUsagePaths(config);
-    const shouldContinue = await this.warnInvalidConfiguredPaths(config, sourcePaths, force);
-    if (!shouldContinue) {
+    const invalidSources = sourcePaths.filter((source) => source.issue);
+    if (invalidSources.length > 0 && (!this.invalidSourcePromptShown || force)) {
+      this.invalidSourcePromptShown = true;
+      // User prompts must never block the single-flight refresh loop; the
+      // prompt handler triggers its own refresh after applying changes.
+      void this.promptInvalidPaths(config, invalidSources);
       return;
     }
 
@@ -488,7 +600,10 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       (source) => missingProviders.includes(source.provider),
     );
     if (detected.length === 0) {
-      await this.showNoSourceHint(force);
+      if (!this.noSourcePromptShown || force) {
+        this.noSourcePromptShown = true;
+        void this.promptNoSources();
+      }
       return;
     }
 
@@ -527,17 +642,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     };
   }
 
-  private async warnInvalidConfiguredPaths(
-    config: vscode.WorkspaceConfiguration,
-    sourcePaths: ConfiguredUsagePath[],
-    force: boolean,
-  ): Promise<boolean> {
-    const invalidSources = sourcePaths.filter((source) => source.issue);
-    if (invalidSources.length === 0 || (this.invalidSourcePromptShown && !force)) {
-      return true;
-    }
-
-    this.invalidSourcePromptShown = true;
+  private async promptInvalidPaths(config: vscode.WorkspaceConfiguration, invalidSources: ConfiguredUsagePath[]): Promise<void> {
     const summary = invalidSources.map((source) => `${source.provider}: ${source.configuredPath}`).join("\n");
     const clearInvalidPaths = this.t("modal.clearInvalidPaths");
     const chooseFolders = this.t("modal.chooseFolders");
@@ -556,25 +661,22 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       for (const source of invalidSources) {
         await config.update(`${source.provider}.usagePath`, "", vscode.ConfigurationTarget.Global);
       }
-      return true;
+      void this.refresh({ allowSourcePrompt: true });
+      return;
     }
 
     if (selected === chooseFolders) {
       await this.chooseUsageFolders(config, invalidSources.map((source) => source.provider));
-      return false;
+      void this.refresh({ allowSourcePrompt: true });
+      return;
     }
 
     if (selected === openSettings) {
       await vscode.commands.executeCommand("workbench.action.openSettings", "aiCodingUsage");
     }
-    return false;
   }
 
-  private async showNoSourceHint(force: boolean): Promise<void> {
-    if (this.noSourcePromptShown && !force) {
-      return;
-    }
-    this.noSourcePromptShown = true;
+  private async promptNoSources(): Promise<void> {
     const chooseFolders = this.t("modal.chooseFolders");
     const openSettings = this.t("action.openSettings");
     const notNow = this.t("modal.notNow");
@@ -586,6 +688,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     );
     if (selected === chooseFolders) {
       await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex"]);
+      void this.refresh({ allowSourcePrompt: true });
     } else if (selected === openSettings) {
       await vscode.commands.executeCommand("workbench.action.openSettings", "aiCodingUsage");
     }

@@ -12,9 +12,15 @@ import type {
   UsageSummary,
 } from "../domain/types";
 import { estimateRecordCost, PricingService } from "./PricingService";
-import { zonedDateKey } from "./TimeZoneService";
+import { makeZonedDayBucketer } from "./TimeZoneService";
 
 export class UsageAggregator {
+  // Both caches are rebuilt at the top of every aggregate() call; they exist so
+  // cost estimation and session-key derivation run once per record instead of
+  // once per builder pass (5x for cost, 4x for session keys).
+  private costCache = new Map<UsageRecord, UsageCost | undefined>();
+  private sessionKeyCache = new Map<UsageRecord, string>();
+
   public constructor(private readonly pricing?: PricingService) {}
 
   public aggregate(imports: AdapterImportResult[], range: TimeRange, providerFilter: UsageProviderFilter = "all"): UsageSummary {
@@ -22,6 +28,12 @@ export class UsageAggregator {
     const errors = imports.flatMap((item) => item.errors);
     const sourceMeta = imports.flatMap((item) => item.sourceMeta);
     const records = this.filterRecords(imports.flatMap((item) => item.records), range, providerFilter);
+    this.costCache = new Map();
+    this.sessionKeyCache = new Map();
+    for (const record of records) {
+      this.costCache.set(record, estimateRecordCost(record, this.pricing));
+      this.sessionKeyCache.set(record, sessionKey(record));
+    }
 
     return {
       range,
@@ -49,8 +61,12 @@ export class UsageAggregator {
     });
   }
 
+  private sessionKeyOf(record: UsageRecord): string {
+    return this.sessionKeyCache.get(record) ?? sessionKey(record);
+  }
+
   private buildTotals(records: UsageRecord[]): UsageSummary["totals"] {
-    const sessionIds = new Set(records.map((record) => sessionKey(record)));
+    const sessionIds = new Set(records.map((record) => this.sessionKeyOf(record)));
     const activeModels = new Set(records.map((record) => record.model).filter(Boolean));
     return {
       records: records.length,
@@ -68,7 +84,7 @@ export class UsageAggregator {
       return {
         provider,
         records: providerRecords.length,
-        sessions: new Set(providerRecords.map((record) => sessionKey(record))).size,
+        sessions: new Set(providerRecords.map((record) => this.sessionKeyOf(record))).size,
         tokens: providerRecords.reduce((total, record) => addTokens(total, record.tokens), {}),
         cost: this.sumCost(providerRecords),
       };
@@ -83,12 +99,12 @@ export class UsageAggregator {
       pushGroup(groups, key, record);
     }
 
-    return [...groups.entries()]
-      .map(([key, groupRecords]) => {
-        const [provider, model] = key.split(":");
+    return [...groups.values()]
+      .map((groupRecords) => {
+        const first = groupRecords[0];
         return {
-          provider: provider as UsageProvider,
-          model: model ?? "unknown",
+          provider: first?.provider ?? ("claude" as UsageProvider),
+          model: first?.model ?? "unknown",
           records: groupRecords.length,
           tokens: groupRecords.reduce((total, record) => addTokens(total, record.tokens), {}),
           cost: this.sumCost(groupRecords),
@@ -98,9 +114,10 @@ export class UsageAggregator {
   }
 
   private buildTrend(records: UsageRecord[], range: TimeRange): UsageSummary["trend"] {
+    const bucketOf = makeZonedDayBucketer(range.startDate, range.endDate, range.timeZone.resolvedTimeZone);
     const groups = new Map<string, UsageRecord[]>();
     for (const record of records) {
-      const bucket = zonedDateKey(new Date(record.startedAt ?? record.observedAt), range.timeZone.resolvedTimeZone);
+      const bucket = bucketOf(new Date(record.startedAt ?? record.observedAt).getTime());
       pushGroup(groups, bucket, record);
     }
 
@@ -109,7 +126,7 @@ export class UsageAggregator {
       .map(([bucket, groupRecords]) => ({
         bucket,
         records: groupRecords.length,
-        sessions: new Set(groupRecords.map((record) => sessionKey(record))).size,
+        sessions: new Set(groupRecords.map((record) => this.sessionKeyOf(record))).size,
         tokens: groupRecords.reduce((total, record) => addTokens(total, record.tokens), {}),
         cost: this.sumCost(groupRecords),
       }));
@@ -118,7 +135,7 @@ export class UsageAggregator {
   private buildSessions(records: UsageRecord[]): UsageSession[] {
     const groups = new Map<string, UsageRecord[]>();
     for (const record of records) {
-      const key = sessionKey(record);
+      const key = this.sessionKeyOf(record);
       pushGroup(groups, key, record);
     }
 
@@ -140,7 +157,9 @@ export class UsageAggregator {
   }
 
   private sumCost(records: UsageRecord[]): UsageCost | undefined {
-    const costs = records.map((record) => estimateRecordCost(record, this.pricing)).filter((cost): cost is UsageCost => Boolean(cost));
+    const costs = records
+      .map((record) => (this.costCache.has(record) ? this.costCache.get(record) : estimateRecordCost(record, this.pricing)))
+      .filter((cost): cost is UsageCost => Boolean(cost));
     const currencies = new Set(costs.map((cost) => cost.currency));
     if (currencies.size !== 1) {
       return undefined;

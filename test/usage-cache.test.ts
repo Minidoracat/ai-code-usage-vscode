@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -172,7 +172,7 @@ test("cached importer reuses unchanged files with cached diagnostics and no reco
   }
 });
 
-test("cached importer surfaces corrupt cache shards instead of silently dropping usage", async () => {
+test("cached importer keeps serving usage from memory when a shard file is corrupted externally", async () => {
   const fixture = await createFixture();
   try {
     await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), {
@@ -189,18 +189,48 @@ test("cached importer surfaces corrupt cache shards instead of silently dropping
 
     const result = await importer.loadForRange({ sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))], range });
 
-    assert.equal(result.cache.rangeComplete, false);
-    assert.ok(result.imports[0]?.errors.some((error) => error.code === "cache_read_failed"));
+    assert.equal(result.cache.rangeComplete, true);
+    assert.equal(result.imports[0]?.records.length, 1);
+  } finally {
+    await fixture.dispose();
+  }
+});
 
-    const repaired = await importer.loadForRange({
-      sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
-      range,
-      forceReparse: true,
+test("cached importer self-heals corrupt cache shards after a restart without forced reparse", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), {
+      sessionId: "fixture-corrupt-cache",
+      timestamp: "2026-05-01T01:00:00.000Z",
+      inputTokens: 5,
+      outputTokens: 1,
     });
 
-    assert.equal(repaired.cache.rangeComplete, true);
-    assert.equal(repaired.imports[0]?.records.length, 1);
-    assert.equal(repaired.imports[0]?.errors.some((error) => error.code === "cache_read_failed"), false);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    await new CachedUsageImporter(fixture.cacheRoot).loadForRange({
+      sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
+      range,
+    });
+    await writeFile(path.join(fixture.cacheRoot, "records", "claude", "2026-05-01.json"), "{not-json}", "utf8");
+
+    // A fresh importer simulates an extension-host restart with a cold shard cache.
+    const restarted = new CachedUsageImporter(fixture.cacheRoot);
+    const corrupted = await restarted.loadForRange({
+      sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
+      range,
+    });
+
+    assert.equal(corrupted.cache.rangeComplete, false);
+    assert.ok(corrupted.imports[0]?.errors.some((error) => error.code === "cache_read_failed"));
+
+    const healed = await restarted.loadForRange({
+      sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
+      range,
+    });
+
+    assert.equal(healed.cache.rangeComplete, true);
+    assert.equal(healed.imports[0]?.records.length, 1);
+    assert.equal(healed.imports[0]?.errors.some((error) => error.code === "cache_read_failed"), false);
   } finally {
     await fixture.dispose();
   }
@@ -340,6 +370,312 @@ test("cached importer isolates source roots for the same provider", async () => 
   } finally {
     await fixture.dispose();
     await rm(otherRoot, { recursive: true, force: true });
+  }
+});
+
+test("cached importer skips cold files dated after the range until a matching range needs them", async () => {
+  const fixture = await createFixture();
+  try {
+    const futureDirectory = path.join(fixture.sourceRoot, "2026", "07", "10");
+    await mkdir(futureDirectory, { recursive: true });
+    const futureFile = path.join(futureDirectory, "rollout-2026-07-10T08-00-00-fixture-future.jsonl");
+    await writeFile(
+      futureFile,
+      JSON.stringify({
+        timestamp: "2026-07-10T08:00:00.000Z",
+        type: "event_msg",
+        payload: { type: "token_count", info: { last_token_usage: { input_tokens: 50, output_tokens: 5 } } },
+      }),
+      "utf8",
+    );
+    const futureMtime = new Date("2026-07-10T09:00:00.000Z");
+    await utimes(futureFile, futureMtime, futureMtime);
+
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const early = await importer.loadForRange({
+      sources: [source("codex", fixture.sourceRoot, new CodexUsageAdapter(fixture.sourceRoot))],
+      range: utcRange("2026-06-08", "2026-06-08"),
+    });
+
+    assert.equal(early.imports[0]?.records.length, 0);
+    assert.equal(early.cache.historicalComplete, false);
+
+    const matching = await importer.loadForRange({
+      sources: [source("codex", fixture.sourceRoot, new CodexUsageAdapter(fixture.sourceRoot))],
+      range: utcRange("2026-07-10", "2026-07-10"),
+    });
+
+    assert.equal(matching.imports[0]?.records.length, 1);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer skips cold files last written before the range start", async () => {
+  const fixture = await createFixture();
+  try {
+    const usageFile = path.join(fixture.sourceRoot, "session.jsonl");
+    await writeClaudeUsage(usageFile, {
+      sessionId: "fixture-old-mtime",
+      timestamp: "2026-03-01T01:00:00.000Z",
+      inputTokens: 3,
+      outputTokens: 1,
+    });
+    const oldMtime = new Date("2026-03-01T02:00:00.000Z");
+    await utimes(usageFile, oldMtime, oldMtime);
+
+    const adapter = new CountingClaudeAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const early = await importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range: utcRange("2026-05-01", "2026-05-01") });
+
+    assert.equal(early.imports[0]?.records.length, 0);
+    assert.equal(early.cache.historicalComplete, false);
+    assert.equal(adapter.parseCount, 0);
+
+    const widened = await importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range: utcRange("2026-03-01", "2026-05-01") });
+
+    assert.equal(widened.imports[0]?.records.length, 1);
+    assert.equal(adapter.parseCount, 1);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+class SpyCodexAdapter extends CodexUsageAdapter {
+  public appendedOutcomes: Array<boolean | undefined> = [];
+
+  public override async importUsageFileWithState(filePath: string, prior?: unknown, readAt?: string) {
+    const outcome = await super.importUsageFileWithState(filePath, prior, readAt);
+    this.appendedOutcomes.push(outcome.appended);
+    return outcome;
+  }
+}
+
+function codexTokenCountLine(timestamp: string, total: { input: number; cached?: number; output: number }): string {
+  return JSON.stringify({
+    timestamp,
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        total_token_usage: {
+          input_tokens: total.input,
+          cached_input_tokens: total.cached ?? 0,
+          output_tokens: total.output,
+        },
+      },
+    },
+  });
+}
+
+function codexTurnContextLine(timestamp: string, model: string): string {
+  return JSON.stringify({ timestamp, type: "turn_context", payload: { model } });
+}
+
+test("cached importer appends grown codex rollouts incrementally with correct cumulative deltas", async () => {
+  const fixture = await createFixture();
+  try {
+    const rolloutFile = path.join(fixture.sourceRoot, "rollout-2026-05-01T00-00-00-fixture-incremental.jsonl");
+    await writeFile(
+      rolloutFile,
+      [codexTurnContextLine("2026-05-01T00:00:00.000Z", "gpt-test"), codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 100, output: 10 })].join("\n") + "\n",
+      "utf8",
+    );
+
+    const adapter = new SpyCodexAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+
+    const first = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(first.imports[0]?.records.length, 1);
+    assert.equal(first.imports[0]?.records[0]?.tokens.input, 100);
+
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:02:00.000Z", { input: 250, output: 30 }) + "\n", { flag: "a" });
+
+    const second = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(second.imports[0]?.records.length, 2);
+    const tokens = second.imports[0]!.records.map((record) => record.tokens);
+    assert.equal(tokens[0]?.input, 100);
+    assert.equal(tokens[1]?.input, 150);
+    assert.equal(tokens[1]?.output, 20);
+    assert.equal(second.imports[0]?.records.every((record) => record.model === "gpt-test"), true);
+    assert.equal(adapter.appendedOutcomes.at(-1), true);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer reparses the whole rollout when a new model invalidates the backfill", async () => {
+  const fixture = await createFixture();
+  try {
+    const rolloutFile = path.join(fixture.sourceRoot, "rollout-2026-05-01T00-00-00-fixture-model-change.jsonl");
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 100, output: 10 }) + "\n", "utf8");
+
+    const adapter = new SpyCodexAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+
+    const first = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(first.imports[0]?.records[0]?.model, undefined);
+
+    await writeFile(
+      rolloutFile,
+      [codexTurnContextLine("2026-05-01T00:02:00.000Z", "gpt-late"), codexTokenCountLine("2026-05-01T00:03:00.000Z", { input: 180, output: 25 })].join("\n") + "\n",
+      { flag: "a" },
+    );
+
+    const second = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(second.imports[0]?.records.length, 2);
+    // Full reparse must retroactively backfill the first record with the late model.
+    assert.equal(second.imports[0]?.records.every((record) => record.model === "gpt-late"), true);
+    assert.equal(adapter.appendedOutcomes.at(-1), undefined);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer reparses fully when rollout history is rewritten", async () => {
+  const fixture = await createFixture();
+  try {
+    const rolloutFile = path.join(fixture.sourceRoot, "rollout-2026-05-01T00-00-00-fixture-rewrite.jsonl");
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 100, output: 10 }) + "\n", "utf8");
+
+    const adapter = new SpyCodexAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+
+    // Rewrite history with different totals AND a larger size, so only the
+    // tail-hash check can tell the difference.
+    await writeFile(
+      rolloutFile,
+      [codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 40, output: 4 }), codexTokenCountLine("2026-05-01T00:02:00.000Z", { input: 90, output: 9 })].join("\n") + "\n",
+      "utf8",
+    );
+
+    const second = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(second.imports[0]?.records.length, 2);
+    assert.equal(second.imports[0]?.records[0]?.tokens.input, 40);
+    assert.equal(second.imports[0]?.records[1]?.tokens.input, 50);
+    assert.equal(adapter.appendedOutcomes.at(-1), undefined);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer handles rollouts without a trailing newline safely", async () => {
+  const fixture = await createFixture();
+  try {
+    const rolloutFile = path.join(fixture.sourceRoot, "rollout-2026-05-01T00-00-00-fixture-no-newline.jsonl");
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 100, output: 10 }), "utf8");
+
+    const adapter = new SpyCodexAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+
+    const first = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(first.imports[0]?.records.length, 1);
+
+    await writeFile(rolloutFile, "\n" + codexTokenCountLine("2026-05-01T00:02:00.000Z", { input: 250, output: 30 }) + "\n", { flag: "a" });
+
+    const second = await importer.loadForRange({ sources: [source("codex", fixture.sourceRoot, adapter)], range });
+    assert.equal(second.imports[0]?.records.length, 2);
+    assert.equal(second.imports[0]?.records[1]?.tokens.input, 150);
+    // The first parse consumed an unterminated tail, so incremental resume is off.
+    assert.equal(adapter.appendedOutcomes.at(-1), undefined);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer drops stale in-memory shards when another extension host writes the cache", async () => {
+  const fixture = await createFixture();
+  try {
+    const rolloutFile = path.join(fixture.sourceRoot, "rollout-2026-05-01T00-00-00-fixture-multiwindow.jsonl");
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:01:00.000Z", { input: 100, output: 10 }) + "\n", "utf8");
+
+    // Two importers sharing one cache directory simulate two VS Code windows.
+    const windowA = new CachedUsageImporter(fixture.cacheRoot);
+    const windowB = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    const sources = () => [source("codex", fixture.sourceRoot, new CodexUsageAdapter(fixture.sourceRoot))];
+
+    await windowA.loadForRange({ sources: sources(), range });
+    const bFirst = await windowB.loadForRange({ sources: sources(), range });
+    assert.equal(bFirst.imports[0]?.records.length, 1);
+
+    // Window A parses the appended tail and writes shards + index.
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:02:00.000Z", { input: 250, output: 30 }) + "\n", { flag: "a" });
+    await windowA.loadForRange({ sources: sources(), range });
+
+    // Window B must notice A's index write and reload from disk instead of
+    // serving its stale in-memory shard.
+    const bSecond = await windowB.loadForRange({ sources: sources(), range });
+    assert.equal(bSecond.imports[0]?.records.length, 2);
+
+    // Third append handled by B first: its incremental base must be the
+    // authoritative on-disk state, preserving A's records.
+    await writeFile(rolloutFile, codexTokenCountLine("2026-05-01T00:03:00.000Z", { input: 400, output: 45 }) + "\n", { flag: "a" });
+    await windowB.loadForRange({ sources: sources(), range });
+    const aThird = await windowA.loadForRange({ sources: sources(), range });
+    assert.equal(aThird.imports[0]?.records.length, 3);
+    assert.deepEqual(
+      aThird.imports[0]?.records.map((record) => record.tokens.input),
+      [100, 150, 150],
+    );
+
+    // A restart must see the same complete data from disk.
+    const restarted = await new CachedUsageImporter(fixture.cacheRoot).loadForRange({ sources: sources(), range });
+    assert.equal(restarted.imports[0]?.records.length, 3);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer keeps the most recent days and reports truncation for ranges beyond the shard cap", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), {
+      sessionId: "fixture-cap-recent",
+      timestamp: "2026-05-01T01:00:00.000Z",
+      inputTokens: 9,
+      outputTokens: 3,
+    });
+
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const huge = utcRange("2000-01-01", "2026-05-02");
+    const result = await importer.loadForRange({ sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))], range: huge });
+
+    // Recent data must survive the cap; the truncation must be reported.
+    assert.equal(result.imports[0]?.records.length, 1);
+    assert.equal(result.cache.rangeComplete, false);
+    assert.ok(result.imports[0]?.errors.some((error) => error.message.includes("most recent")));
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer does not rewrite index.json when nothing changed", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), {
+      sessionId: "fixture-dirty-flag",
+      timestamp: "2026-05-01T01:00:00.000Z",
+      inputTokens: 2,
+      outputTokens: 1,
+    });
+
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    await importer.loadForRange({ sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))], range });
+    const before = await stat(path.join(fixture.cacheRoot, "index.json"));
+
+    await importer.loadForRange({ sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))], range });
+    const after = await stat(path.join(fixture.cacheRoot, "index.json"));
+
+    assert.equal(after.mtimeMs, before.mtimeMs);
+  } finally {
+    await fixture.dispose();
   }
 });
 

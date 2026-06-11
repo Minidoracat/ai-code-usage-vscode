@@ -266,6 +266,16 @@ h2 {
   padding: 3px 6px;
 }
 
+.custom-row > button {
+  align-self: end;
+}
+
+.range-invalid-hint {
+  align-self: center;
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: 12px;
+}
+
 .provider-filter,
 .auto-refresh-row,
 .timezone-row {

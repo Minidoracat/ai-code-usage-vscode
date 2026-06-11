@@ -150,5 +150,9 @@
   "modal.selectUsageFolder": "{provider} usage folder を選択",
   "modal.detectedSources": "AI Coding Usage はローカル usage ソースを検出して適用しました：\n{summary}",
   "modal.invalidPaths": "AI Coding Usage はこのマシンでは有効に見えない usage paths を無視しました：\n{summary}",
-  "modal.noSources": "AI Coding Usage はこのマシンで Claude Code または Codex の usage paths を見つけられませんでした。データを読み込むには usage paths を設定してください。"
+  "modal.noSources": "AI Coding Usage はこのマシンで Claude Code または Codex の usage paths を見つけられませんでした。データを読み込むには usage paths を設定してください。",
+  "range.invalidCustom": "カスタム日付が無効です：開始日は終了日より後にできず、年は 2000 年以降である必要があります。",
+  "state.backgroundRefresh": "バックグラウンドで更新中です。完了するとダッシュボードに自動的に反映されます。",
+  "modal.rebuildCacheConfirm": "キャッシュを再構築しますか？すべての usage ファイルを再解析します。データ量によっては数十秒〜数分かかることがあります。",
+  "modal.rebuildCacheProceed": "再構築"
 }
