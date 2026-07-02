@@ -14,6 +14,7 @@ import type {
   UsageProviderFilter,
   UsageSummary,
 } from "../src/domain/types";
+import { convertPricingCatalog, convertSummaryCurrency, defaultDisplayCurrency } from "../src/domain/currency";
 import { timeRangeKinds } from "../src/domain/timeRange";
 import { findPricingRule } from "../src/services/PricingService";
 import {
@@ -60,7 +61,7 @@ type ChartMetric = (typeof chartMetrics)[number];
 type ChartSize = (typeof chartSizes)[number];
 type PendingRequest = {
   requestId: string;
-  type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone";
+  type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone" | "setCurrency" | "refreshExchangeRates";
   rangeKind?: TimeRangeKind;
   provider?: UsageProviderFilter;
   locale?: DashboardLocalePreference;
@@ -82,6 +83,8 @@ function Dashboard() {
   const [notice, setNotice] = useState<string>();
   const [customAutoRefreshInput, setCustomAutoRefreshInput] = useState("300");
   const [customTimeZoneInput, setCustomTimeZoneInput] = useState("Asia/Taipei");
+  const [currencyCodeInput, setCurrencyCodeInput] = useState("USD");
+  const [currencyRateInput, setCurrencyRateInput] = useState("");
   const [pendingRequest, setPendingRequest] = useState<PendingRequest>();
   const [draftStart, setDraftStart] = useState<string>();
   const [draftEnd, setDraftEnd] = useState<string>();
@@ -146,6 +149,13 @@ function Dashboard() {
     }
   }, [state?.timeZone.customTimeZone, state?.timeZone.resolvedTimeZone]);
 
+  useEffect(() => {
+    const code = state?.currency?.requestedCode ?? state?.currency?.code;
+    if (code) {
+      setCurrencyCodeInput(code);
+    }
+  }, [state?.currency?.code, state?.currency?.requestedCode]);
+
   // Stable identity per messages object so the chart effect's translate dep
   // does not invalidate (and rebuild uPlot) on every render.
   const stateMessages = state?.messages;
@@ -153,11 +163,26 @@ function Dashboard() {
     return (key: string) => (stateMessages ? (stateMessages[key] ?? key) : key);
   }, [stateMessages]);
 
+  // Costs and pricing rates are converted once here for display; everything
+  // downstream (panels, screenshots, tooltips) renders the converted values.
+  const stateSummary = state?.summary;
+  const statePricing = state?.pricing;
+  const stateCurrency = state?.currency;
+  const summaryForDisplay = useMemo(
+    () => (stateSummary ? convertSummaryCurrency(stateSummary, stateCurrency ?? defaultDisplayCurrency) : undefined),
+    [stateSummary, stateCurrency],
+  );
+  const pricingForDisplay = useMemo(
+    () => (statePricing ? convertPricingCatalog(statePricing, stateCurrency ?? defaultDisplayCurrency) : undefined),
+    [statePricing, stateCurrency],
+  );
+
   if (!state) {
     return <InitialLoading state={loadingState} error={error} />;
   }
 
-  const summary = state.summary;
+  const summary = summaryForDisplay ?? state.summary;
+  const pricing = pricingForDisplay ?? state.pricing;
   const hasRecords = summary.totals.records > 0;
   const locale = state.locale;
   const timeZone = state.timeZone;
@@ -173,7 +198,7 @@ function Dashboard() {
   const customTimeZoneValid = isValidTimeZoneName(customTimeZoneInput);
 
   const send = (
-    type: "refresh" | "rebuildCache" | "setRange" | "setProvider" | "setLocale" | "setAutoRefresh" | "setTimeZone",
+    type: PendingRequest["type"],
     payload?: unknown,
     pending?: Omit<PendingRequest, "requestId" | "type">,
   ) => {
@@ -218,11 +243,31 @@ function Dashboard() {
     send("setAutoRefresh", { intervalSeconds }, { autoRefreshIntervalSeconds: intervalSeconds });
   const setTimeZone = (mode: TimeZoneMode, customTimeZone?: string) =>
     send("setTimeZone", { mode, customTimeZone }, { timeZoneMode: mode, customTimeZone });
+  const activeCurrency = state.currency ?? { ...defaultDisplayCurrency, source: "default" as const };
+  // Empty rate = switch code only; a non-empty rate must be a positive number,
+  // otherwise Apply stays disabled instead of silently dropping the rate.
+  const currencyRateEmpty = currencyRateInput.trim() === "";
+  const currencyRateValid = Number.isFinite(Number(currencyRateInput)) && Number(currencyRateInput) > 0;
+  const currencyApplyEnabled = isValidCurrencyCode(currencyCodeInput) && (currencyRateEmpty || currencyRateValid);
+  const applyCurrency = () => {
+    const code = currencyCodeInput.trim().toUpperCase();
+    if (!isValidCurrencyCode(code)) {
+      return;
+    }
+    send("setCurrency", currencyRateEmpty ? { code } : { code, rate: Number(currencyRateInput) }, {});
+    setCurrencyRateInput("");
+  };
   const captureDashboard = async () => {
     const target = document.querySelector<HTMLElement>(".dashboard-frame");
     if (!target) {
       throw new Error(translate("error.screenshotTarget"));
     }
+    const screenshot = state.screenshot ?? { includePricing: false, includeSessions: false };
+    const hideClasses = [
+      !screenshot.includePricing && "shot-hide-pricing",
+      !screenshot.includeSessions && "shot-hide-sessions",
+    ].filter((value): value is string => typeof value === "string");
+    target.classList.add(...hideClasses);
     try {
       return await captureElementPng(target);
     } catch {
@@ -232,7 +277,12 @@ function Dashboard() {
         translate,
         metric: chartMetric,
         width: Math.max(target.scrollWidth, target.getBoundingClientRect().width, document.documentElement.clientWidth),
+        pricing,
+        includePricing: screenshot.includePricing,
+        includeSessions: screenshot.includeSessions,
       });
+    } finally {
+      target.classList.remove(...hideClasses);
     }
   };
   const copyScreenshot = async () => {
@@ -482,6 +532,64 @@ function Dashboard() {
             </label>
           </div>
         </div>
+        <div class="currency-row" aria-label={translate("currency.label")}>
+          <div class="currency-current">
+            <span>{translate("currency.label")}</span>
+            <strong>
+              {activeCurrency.code}
+              {activeCurrency.code !== "USD" ? ` ${formatRateAmount(activeCurrency.rate, locale)}` : ""}
+            </strong>
+            <small>
+              {translate(`currency.source.${activeCurrency.source ?? "default"}`)}
+              {activeCurrency.updatedAt ? ` · ${formatDateWithYear(activeCurrency.updatedAt, locale, timeZone.resolvedTimeZone)}` : ""}
+            </small>
+          </div>
+          <div class="currency-controls">
+            <input
+              type="text"
+              class="currency-code-input"
+              list="currency-code-options"
+              maxLength={3}
+              value={currencyCodeInput}
+              aria-label={translate("currency.label")}
+              spellcheck={false}
+              onInput={(event) => setCurrencyCodeInput((event.currentTarget as HTMLInputElement).value.toUpperCase())}
+            />
+            <datalist id="currency-code-options">
+              {(state.availableCurrencies ?? []).map((code) => (
+                <option key={code} value={code} />
+              ))}
+            </datalist>
+            <input
+              type="number"
+              class="currency-rate-input"
+              min="0"
+              step="any"
+              placeholder={translate("currency.rateLabel")}
+              value={currencyRateInput}
+              aria-label={translate("currency.rateLabel")}
+              onInput={(event) => setCurrencyRateInput((event.currentTarget as HTMLInputElement).value)}
+            />
+            <button
+              class={classNames("provider-filter-button", pendingRequest?.type === "setCurrency" && "pending")}
+              type="button"
+              disabled={isPending || !currencyApplyEnabled}
+              onClick={applyCurrency}
+            >
+              {translate("action.apply")}
+            </button>
+            <button
+              class={classNames("provider-filter-button", pendingRequest?.type === "refreshExchangeRates" && "pending")}
+              type="button"
+              title="open.er-api.com"
+              disabled={isPending}
+              onClick={() => send("refreshExchangeRates", undefined, {})}
+            >
+              {translate("currency.updatePublic")}
+            </button>
+          </div>
+          {activeCurrency.requestedCode ? <p class="currency-missing-hint">{translate("currency.missingRate")}</p> : null}
+        </div>
       </section>
 
       <SummaryUsagePanel summary={summary} locale={locale} translate={translate} />
@@ -492,7 +600,7 @@ function Dashboard() {
       {hasRecords ? (
         <DataPanels
           summary={summary}
-          pricing={state.pricing}
+          pricing={pricing}
           locale={locale}
           translate={translate}
           chartMetric={chartMetric}
@@ -503,7 +611,7 @@ function Dashboard() {
       ) : (
         <>
           <EmptyState title={translate("empty.title")} body={translate("empty.body")} />
-          <PricingRulesPanel pricing={state.pricing} locale={locale} translate={translate} />
+          <PricingRulesPanel pricing={pricing} locale={locale} translate={translate} />
         </>
       )}
 
@@ -723,7 +831,7 @@ function DataPanels(props: {
 
       <PricingRulesPanel pricing={pricing} locale={locale} translate={translate} />
 
-      <section class="panel">
+      <section class="panel sessions-panel">
         <div class="panel-heading">
           <h2>{translate("section.sessions")}</h2>
         </div>
@@ -763,7 +871,8 @@ function ModelUsagePanel(props: { summary: UsageSummary; pricing: PricingCatalog
   if (models.length === 0) {
     return null;
   }
-  const pricingInstant = validDateOrUndefined(summary.range.end);
+  const rangeEndInstant = validDateOrUndefined(summary.range.end);
+  const rangeStartInstant = validDateOrUndefined(summary.range.start);
 
   return (
     <section class="panel model-usage-panel">
@@ -772,13 +881,21 @@ function ModelUsagePanel(props: { summary: UsageSummary; pricing: PricingCatalog
       </div>
       <div class="model-usage-list">
         {models.map((model) => {
-          const pricingRule = findPricingRule(pricing.rules, model.provider, model.model, pricingInstant);
+          const pricingRule = findPricingRule(pricing.rules, model.provider, model.model, rangeEndInstant);
+          const ruleAtRangeStart = rangeStartInstant
+            ? findPricingRule(pricing.rules, model.provider, model.model, rangeStartInstant)
+            : pricingRule;
           return (
             <article class={classNames("model-usage-card", `provider-${model.provider}`)} key={`${model.provider}-${model.model}`}>
               <div class="model-usage-header">
                 <div class="model-title-stack">
                   <strong title={model.model}>{model.model}</strong>
-                  <PricingSummary rule={pricingRule} locale={locale} translate={translate} />
+                  <PricingSummary
+                    rule={pricingRule}
+                    variesInRange={Boolean(pricingRule && ruleAtRangeStart && ruleAtRangeStart !== pricingRule)}
+                    locale={locale}
+                    translate={translate}
+                  />
                 </div>
                 <CostValue cost={model.cost} locale={locale} translate={translate} />
               </div>
@@ -806,7 +923,7 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
       </summary>
       <div class="pricing-rule-list">
         {pricing.rules.map((rule) => (
-          <article class={classNames("pricing-rule-card", `provider-${rule.provider}`)} key={`${rule.provider}-${rule.model}`}>
+          <article class={classNames("pricing-rule-card", `provider-${rule.provider}`)} key={`${rule.provider}-${rule.model}-${rule.effectiveFrom ?? ""}-${rule.effectiveTo ?? ""}`}>
             <div class="pricing-rule-header">
               <div>
                 <strong title={rule.model}>{rule.model}</strong>
@@ -824,6 +941,11 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
               ))}
             </div>
             <div class="pricing-rule-meta">
+              {rule.effectiveFrom || rule.effectiveTo ? (
+                <span>
+                  {translate("pricing.effective")}: {rule.effectiveFrom?.slice(0, 10) ?? "…"} - {rule.effectiveTo?.slice(0, 10) ?? "…"}
+                </span>
+              ) : null}
               <span title={rule.sourceUrl}>
                 {translate("pricing.source")}: {sourceHost(rule.sourceUrl)}
               </span>
@@ -841,8 +963,13 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
   );
 }
 
-function PricingSummary(props: { rule: PricingRule | undefined; locale: string; translate: (key: string) => string }) {
-  const { rule, locale, translate } = props;
+function PricingSummary(props: {
+  rule: PricingRule | undefined;
+  variesInRange?: boolean;
+  locale: string;
+  translate: (key: string) => string;
+}) {
+  const { rule, variesInRange, locale, translate } = props;
   if (!rule) {
     return (
       <span class="pricing-summary missing" title={translate("pricing.tooltip.unmatched")}>
@@ -851,9 +978,13 @@ function PricingSummary(props: { rule: PricingRule | undefined; locale: string; 
     );
   }
 
+  const tooltip = variesInRange
+    ? `${translate("pricing.variesInRange")}\n${pricingRuleTooltip(rule, locale, translate)}`
+    : pricingRuleTooltip(rule, locale, translate);
   return (
-    <span class="pricing-summary" title={pricingRuleTooltip(rule, locale, translate)}>
+    <span class="pricing-summary" title={tooltip}>
       {formatPricingBadge(rule, locale, translate)}
+      {variesInRange ? " *" : ""}
     </span>
   );
 }
@@ -1403,6 +1534,15 @@ function formatDateTime(value: string | undefined, locale: string, timeZone: str
   }).format(date);
 }
 
+// Public rates can go stale for months; the year keeps old data recognizable.
+function formatDateWithYear(value: string, locale: string, timeZone: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return cachedDateFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone }).format(date);
+}
+
 function formatDuration(start: string | undefined, end: string | undefined, translate: (key: string) => string): string {
   if (!start || !end) {
     return "";
@@ -1466,6 +1606,10 @@ function isValidTimeZoneName(value: string): boolean {
   }
   timeZoneValidityCache.set(trimmed, valid);
   return valid;
+}
+
+function isValidCurrencyCode(value: string): boolean {
+  return /^[A-Za-z]{3}$/.test(value.trim());
 }
 
 function isValidCustomRange(start: string | undefined, end: string | undefined): boolean {
@@ -1590,6 +1734,9 @@ type ReportRenderOptions = {
   translate: (key: string) => string;
   metric: ChartMetric;
   width: number;
+  pricing: PricingCatalog;
+  includePricing: boolean;
+  includeSessions: boolean;
 };
 
 type ReportPalette = {
@@ -1620,10 +1767,12 @@ function renderDashboardReportPng(options: ReportRenderOptions): string {
   const gap = 12;
   const innerWidth = width - margin * 2;
   const models = options.summary.modelSplit.slice(0, 12);
-  const sessions = prioritizedSessions(options.summary.sessions);
+  const pricingRules = options.includePricing ? options.pricing.rules : [];
+  const sessions = options.includeSessions ? prioritizedSessions(options.summary.sessions) : [];
   const chartHeightValue = 300;
   const providerHeight = 92 + Math.max(0, options.summary.providerSplit.length - 1) * 28;
   const modelHeight = models.length > 0 ? 44 + models.length * 78 : 0;
+  const pricingHeight = pricingRules.length > 0 ? 44 + pricingRules.length * 28 : 0;
   const sessionHeight = sessions.length > 0 ? 58 + sessions.length * 28 : 0;
   const issueHeight = options.summary.errors.length + options.summary.warnings.length > 0 ? 88 : 0;
   const controlsHeight = 78;
@@ -1642,6 +1791,8 @@ function renderDashboardReportPng(options: ReportRenderOptions): string {
     gap +
     modelHeight +
     (modelHeight > 0 ? gap : 0) +
+    pricingHeight +
+    (pricingHeight > 0 ? gap : 0) +
     sessionHeight +
     margin;
 
@@ -1679,6 +1830,9 @@ function renderDashboardReportPng(options: ReportRenderOptions): string {
   y = drawReportProviders(report, options, y, innerWidth, providerHeight) + gap;
   if (models.length > 0) {
     y = drawReportModels(report, options, y, innerWidth, models) + gap;
+  }
+  if (pricingRules.length > 0) {
+    y = drawReportPricing(report, options, y, innerWidth, pricingRules) + gap;
   }
   drawReportSessions(report, options, y, innerWidth, sessions);
 
@@ -1895,6 +2049,39 @@ function drawReportModels(report: ReportCanvas, options: ReportRenderOptions, y:
     });
   });
   return y + height;
+}
+
+function drawReportPricing(report: ReportCanvas, options: ReportRenderOptions, y: number, width: number, rules: PricingRule[]): number {
+  const height = 44 + rules.length * 28;
+  drawReportCard(report, report.margin, y, width, height);
+  setReportFont(report, 12, 700);
+  report.context.fillStyle = report.palette.muted;
+  report.context.fillText(options.translate("section.pricing"), report.margin + 14, y + 24);
+  rules.forEach((rule, index) => {
+    const color = rule.provider === "claude" ? report.palette.claude : report.palette.codex;
+    const rowY = y + 42 + index * 28;
+    setReportFont(report, 12, 600);
+    report.context.fillStyle = color;
+    drawClippedText(report, rule.model, report.margin + 14, rowY + 10, 300);
+    setReportFont(report, 11, 500);
+    report.context.fillStyle = report.palette.text;
+    report.context.textAlign = "right";
+    drawClippedTextRight(report, formatPricingBadge(rule, options.locale, options.translate), report.margin + width - 14, rowY + 10, width - 340);
+    report.context.textAlign = "left";
+  });
+  return y + height;
+}
+
+function drawClippedTextRight(report: ReportCanvas, value: string, x: number, y: number, width: number): void {
+  let text = value;
+  if (report.context.measureText(text).width <= width) {
+    report.context.fillText(text, x, y);
+    return;
+  }
+  while (text.length > 1 && report.context.measureText(`${text}...`).width > width) {
+    text = text.slice(0, -1);
+  }
+  report.context.fillText(`${text}...`, x, y);
 }
 
 function drawReportSessions(report: ReportCanvas, options: ReportRenderOptions, y: number, width: number, sessions: UsageSummary["sessions"]): number {

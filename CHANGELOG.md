@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.5 - 2026-07-02
+
+### Added
+
+- Claude Sonnet 5 pricing in the packaged catalog, including the introductory rates ($2/$10 per MTok with matching cache rates) through 2026-08-31 and the standard rates ($3/$15) from 2026-09-01 — the switch is automatic based on each record's timestamp, and a catalog gate now enforces that dated rules stay contiguous.
+- Display currency conversion. A new currency row in the dashboard lets you pick a 3-letter code, fetch public exchange rates on demand (user-triggered request to `open.er-api.com`; no local data is sent, nothing runs automatically), or enter a manual rate per 1 USD. Manual rates take precedence over public rates; applying with an empty rate clears the manual override. Costs are always calculated and cached in USD — conversion is display-only and also applies to the status bar and screenshots.
+- Screenshot content settings: the full-page screenshot copy now excludes the pricing rules panel and the sessions table by default; `aiCodingUsage.screenshot.includePricing` and `aiCodingUsage.screenshot.includeSessions` opt them back in (both capture paths honor the settings, and the fallback renderer now draws pricing rules when included).
+
+### Changed
+
+- Pricing rule cards now show their effective window inline, and the model breakdown marks models whose rate changed within the selected range.
+- Display-only setting changes (currency, exchange rates, screenshot content) replay the cached summary instead of re-running the aggregate pipeline.
+- The privacy static check now also scans `.tsx` sources and pins the one sanctioned network host; the exchange-rate fetch validates the provider response strictly (USD base, sane rates, valid timestamp), caps the response size, and refuses redirects.
+
 ## 0.1.4 - 2026-06-11
 
 ### Fixed

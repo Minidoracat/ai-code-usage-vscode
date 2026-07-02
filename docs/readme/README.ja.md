@@ -41,7 +41,7 @@ dashboard は次のどちらかの方法で開けます。
 - `AI Coding Usage を開く`：editor area に dashboard を開きます。
 - `使用量を更新`：ローカル usage files を再スキャンして dashboard を更新します。
 - `ローカル AI usage sources を検出`：ローカルの Claude Code と Codex usage paths を検出します。
-- `AI Coding Usage 設定を開く`：usage paths、言語、time zone、auto refresh を設定します。
+- `AI Coding Usage 設定を開く`：usage paths、言語、time zone、auto refresh、表示通貨、スクリーンショット内容を設定します。
 
 初回起動時は usage path settings を空のままにすると、extension が一般的なローカルパスを検出します。settings で `aiCodingUsage.claude.usagePath` または `aiCodingUsage.codex.usagePath` を手動入力することもできます。
 
@@ -53,9 +53,9 @@ dashboard は次のどちらかの方法で開けます。
 - upload なし
 - cloud sync なし
 - telemetry なし
-- Runtime network requests なし
+- バックグラウンドの network requests なし
 
-extension は、設定済み、またはローカルソース検出で承認された usage paths のみを読み取ります。
+唯一のネットワークリクエストはユーザー操作によるものです。ダッシュボードの「公開レートを更新」を押すと `open.er-api.com` から為替レートを取得します（データ提供：[ExchangeRate-API](https://www.exchangerate-api.com)）。ローカルデータは一切送信せず、自動実行もされません。それ以外はすべてローカル処理です。extension は、設定済み、またはローカルソース検出で承認された usage paths のみを読み取ります。
 
 ## ローカル使用量ソース
 
@@ -82,6 +82,10 @@ Remote SSH または WSL のウィンドウでは、extension は remote extensi
 - 保証された billing statement
 
 pricing は package に含まれる `src/pricing/catalog.json` から計算されます。catalog には source URLs と `checkedAt` metadata が含まれ、`npm run check:pricing` が package 前に pricing metadata を検証します。
+
+コストは USD で計算されます。別の通貨で表示するには、ダッシュボードの通貨行を使用します。3 文字の通貨コード（例: `TWD`）を選び、「公開レートを更新」（ユーザー操作で `open.er-api.com` から取得）を押すか、1 USD あたりのレートを手動入力してください。手動レート（`aiCodingUsage.exchangeRates` に保存）は公開レートより優先されます。レートが何もない場合は USD 表示にフォールバックします。
+
+ページ全体のスクリーンショットコピーには、既定で料金ルールパネルとセッションテーブルが含まれません。`aiCodingUsage.screenshot.includePricing` または `aiCodingUsage.screenshot.includeSessions` で含められます。
 
 ## スクリーンショット
 

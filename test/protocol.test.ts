@@ -42,6 +42,55 @@ test("legacy rolling range update message fails", () => {
   assert.equal("error" in result, true);
 });
 
+test("valid currency update message normalizes the code", () => {
+  const result = validateWebviewRequest({
+    requestId: "currency",
+    type: "setCurrency",
+    version: webviewProtocolVersion,
+    payload: { code: "twd", rate: 32.5 },
+  });
+  assert.equal("error" in result, false);
+  if (!("error" in result) && result.type === "setCurrency") {
+    assert.equal(result.payload.code, "TWD");
+    assert.equal(result.payload.rate, 32.5);
+  }
+
+  const withoutRate = validateWebviewRequest({
+    requestId: "currency",
+    type: "setCurrency",
+    version: webviewProtocolVersion,
+    payload: { code: "USD" },
+  });
+  assert.equal("error" in withoutRate, false);
+});
+
+test("invalid currency update fails", () => {
+  const badCode = validateWebviewRequest({
+    requestId: "currency",
+    type: "setCurrency",
+    version: webviewProtocolVersion,
+    payload: { code: "NT$" },
+  });
+  assert.equal("error" in badCode, true);
+
+  const badRate = validateWebviewRequest({
+    requestId: "currency",
+    type: "setCurrency",
+    version: webviewProtocolVersion,
+    payload: { code: "TWD", rate: -1 },
+  });
+  assert.equal("error" in badRate, true);
+});
+
+test("valid exchange rate refresh message passes", () => {
+  const result = validateWebviewRequest({
+    requestId: "rates",
+    type: "refreshExchangeRates",
+    version: webviewProtocolVersion,
+  });
+  assert.equal("error" in result, false);
+});
+
 test("valid provider filter message passes", () => {
   const result = validateWebviewRequest({
     requestId: "provider",

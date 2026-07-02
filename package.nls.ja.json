@@ -15,5 +15,9 @@
   "configuration.timeZoneMode.description": "Dashboard のタイムゾーンモードです。system はこのマシン、utc は UTC、custom は IANA time zone を使います。",
   "configuration.customTimeZone.description": "Dashboard のカスタム IANA time zone です。例: Asia/Taipei。timeZoneMode が custom の場合のみ使います。",
   "configuration.autoRefreshIntervalSeconds.description": "自動更新間隔を秒で指定します。0 にすると自動更新を停止します。1 から 29 は 30 秒として扱います。推奨の既定値は 300 秒です。",
-  "configuration.autoDetectLocalSources.description": "ローカル Claude Code と Codex usage paths を自動検出して適用します。"
+  "configuration.autoDetectLocalSources.description": "ローカル Claude Code と Codex usage paths を自動検出して適用します。",
+  "configuration.displayCurrency.description": "コスト表示通貨。USD、TWD、JPY、EUR などの 3 文字コードで指定します。コストは USD で計算され、表示時に換算されます。`aiCodingUsage.exchangeRates` の手動レートは、ダッシュボードの「公開レートを更新」で取得した公開レートより優先されます。レートがない場合は USD にフォールバックします。",
+  "configuration.exchangeRates.description": "手動為替レート（1 USD あたりの対象通貨量）。例: `{\"TWD\": 32.5, \"JPY\": 155}`。手動レートはダッシュボードの「公開レートを更新」で取得した公開レートより優先されます。自動取得は行いません。",
+  "configuration.screenshotIncludePricing.description": "ページ全体のスクリーンショットコピーに料金ルールパネルを含めます。",
+  "configuration.screenshotIncludeSessions.description": "ページ全体のスクリーンショットコピーにセッションテーブルを含めます。"
 }

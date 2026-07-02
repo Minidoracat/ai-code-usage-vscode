@@ -3,14 +3,40 @@ import type { CostEstimate, PricingCatalog, PricingRule, UsageCost, UsageRecord 
 
 export class PricingService {
   private readonly metadata: ReturnType<typeof validatePricingMetadata>;
-  // Rules with effectiveFrom/effectiveTo depend on the record instant, so the
-  // lookup cache is only safe while the catalog has no dated rules.
-  private readonly cacheableRules: boolean;
+  // Rules with effectiveFrom/effectiveTo depend on the record instant, so those
+  // model keys cannot use the memoized single-rule cache. They get a precomputed
+  // candidate list instead, keeping the per-record cost at a couple of date
+  // comparisons rather than a full catalog scan (the aggregate hot path prices
+  // ~83k records per pass).
+  private readonly datedCandidates = new Map<string, PricingRule[]>();
   private readonly ruleCache = new Map<string, PricingRule | undefined>();
 
   public constructor(private readonly catalog: PricingCatalog) {
     this.metadata = validatePricingMetadata(catalog);
-    this.cacheableRules = this.metadata.ok && !catalog.rules.some((rule) => rule.effectiveFrom || rule.effectiveTo);
+    if (this.metadata.ok) {
+      const datedKeys = new Set<string>();
+      for (const rule of catalog.rules) {
+        if (!rule.effectiveFrom && !rule.effectiveTo) {
+          continue;
+        }
+        for (const name of [rule.model, ...rule.modelAliases]) {
+          datedKeys.add(`${rule.provider}:${name.toLowerCase()}`);
+        }
+      }
+      for (const key of datedKeys) {
+        const separator = key.indexOf(":");
+        const provider = key.slice(0, separator) as UsageRecord["provider"];
+        const model = key.slice(separator + 1);
+        this.datedCandidates.set(
+          key,
+          this.catalog.rules.filter(
+            (rule) =>
+              rule.provider === provider &&
+              (rule.model.toLowerCase() === model || rule.modelAliases.some((alias) => alias.toLowerCase() === model)),
+          ),
+        );
+      }
+    }
   }
 
   public estimate(record: UsageRecord): CostEstimate {
@@ -63,10 +89,14 @@ export class PricingService {
   }
 
   private lookupRule(record: UsageRecord): PricingRule | undefined {
-    if (!this.cacheableRules || !record.model) {
+    if (!this.metadata.ok || !record.model) {
       return findPricingRule(this.catalog.rules, record.provider, record.model ?? "", pricingInstant(record));
     }
     const key = `${record.provider}:${record.model.toLowerCase()}`;
+    const datedCandidates = this.datedCandidates.get(key);
+    if (datedCandidates) {
+      return selectPricingRule(datedCandidates, pricingInstant(record));
+    }
     if (this.ruleCache.has(key)) {
       return this.ruleCache.get(key);
     }
@@ -101,6 +131,10 @@ export function findPricingRule(
       (rule.model.toLowerCase() === normalizedModel ||
         rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
   );
+  return selectPricingRule(candidates, at);
+}
+
+function selectPricingRule(candidates: PricingRule[], at?: Date): PricingRule | undefined {
   const applicable = candidates
     .filter((rule) => !at || pricingRuleAppliesAt(rule, at))
     .sort((a, b) => effectiveFromTime(b) - effectiveFromTime(a));

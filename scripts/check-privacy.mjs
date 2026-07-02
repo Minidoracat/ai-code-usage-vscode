@@ -21,12 +21,29 @@ for (const root of roots) {
   files.push(...(await listFiles(root)));
 }
 
+// The only sanctioned network call: user-triggered public exchange-rate
+// updates. Any other file using fetch still fails the check, and the
+// sanctioned file may only reference the pinned host below.
+const allowedPatterns = new Map([["src/services/ExchangeRateService.ts", [String.raw`\bfetch\s*\(`]]]);
+const allowedHost = "https://open.er-api.com/";
+
 const failures = [];
 for (const file of files) {
   const content = await readFile(file, "utf8");
+  const allowed = allowedPatterns.get(file.split(path.sep).join("/")) ?? [];
   for (const pattern of denyPatterns) {
+    if (allowed.includes(pattern.source)) {
+      continue;
+    }
     if (pattern.test(content)) {
       failures.push(`${file} matched privacy deny pattern ${pattern}`);
+    }
+  }
+  if (allowed.length > 0) {
+    for (const url of content.match(/https?:\/\/[^\s"'`)]+/g) ?? []) {
+      if (!url.startsWith(allowedHost)) {
+        failures.push(`${file} references non-allowlisted URL ${url}`);
+      }
     }
   }
 }
@@ -45,7 +62,7 @@ async function listFiles(root) {
     const fullPath = path.join(root, entry.name);
     if (entry.isDirectory()) {
       result.push(...(await listFiles(fullPath)));
-    } else if (/\.(ts|js|css|html)$/.test(entry.name)) {
+    } else if (/\.(ts|tsx|js|jsx|mjs|css|html)$/.test(entry.name)) {
       result.push(fullPath);
     }
   }

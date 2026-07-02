@@ -15,5 +15,9 @@
   "configuration.timeZoneMode.description": "Dashboard 시간대 모드입니다. system은 이 기기, utc는 UTC, custom은 IANA time zone을 사용합니다.",
   "configuration.customTimeZone.description": "Dashboard 사용자 지정 IANA time zone입니다. 예: Asia/Taipei. timeZoneMode가 custom일 때만 사용됩니다.",
   "configuration.autoRefreshIntervalSeconds.description": "자동 새로 고침 간격(초)입니다. 0으로 설정하면 자동 새로 고침이 중지됩니다. 1부터 29까지는 30초로 처리됩니다. 권장 기본값은 300초입니다.",
-  "configuration.autoDetectLocalSources.description": "로컬 Claude Code와 Codex usage paths를 자동 감지하고 적용합니다."
+  "configuration.autoDetectLocalSources.description": "로컬 Claude Code와 Codex usage paths를 자동 감지하고 적용합니다.",
+  "configuration.displayCurrency.description": "비용 표시 통화이며 USD, TWD, JPY, EUR 같은 3자리 코드를 사용합니다. 비용은 USD로 계산되고 표시 시 환산됩니다. `aiCodingUsage.exchangeRates`의 수동 환율이 대시보드 「공개 환율 업데이트」로 가져온 공개 환율보다 우선하며, 환율이 없으면 USD로 대체됩니다.",
+  "configuration.exchangeRates.description": "수동 환율(1 USD당 대상 통화 수량)입니다. 예: `{\"TWD\": 32.5, \"JPY\": 155}`. 수동 환율이 대시보드 「공개 환율 업데이트」로 가져온 공개 환율보다 우선합니다. 자동으로 가져오지 않습니다.",
+  "configuration.screenshotIncludePricing.description": "전체 페이지 스크린샷 복사에 가격 규칙 패널을 포함합니다.",
+  "configuration.screenshotIncludeSessions.description": "전체 페이지 스크린샷 복사에 세션 테이블을 포함합니다."
 }

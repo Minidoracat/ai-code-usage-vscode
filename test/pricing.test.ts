@@ -77,6 +77,73 @@ test("current catalog prices Claude Fable 5 cache categories", async () => {
   }
 });
 
+test("current catalog prices Claude Sonnet 5 with introductory rates through 2026-08-31", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const intro = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-07-15T00:00:00.000Z"));
+  const introCache = pricing.estimate(
+    record("claude", "Claude Sonnet 5", { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 }, "2026-07-15T00:00:00.000Z"),
+  );
+
+  assert.equal(intro.available, true);
+  assert.equal(introCache.available, true);
+  if (intro.available && introCache.available) {
+    assert.equal(intro.cost.amount, 12);
+    assert.equal(introCache.cost.amount, 12.2);
+  }
+});
+
+test("current catalog prices Claude Sonnet 5 at standard rates from 2026-09-01", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const standard = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-09-02T00:00:00.000Z"));
+  const longContext = pricing.estimate(record("claude", "claude-sonnet-5[1m]", { input: 1_000_000, output: 1_000_000 }, "2026-09-02T00:00:00.000Z"));
+
+  assert.equal(standard.available, true);
+  assert.equal(longContext.available, true);
+  if (standard.available && longContext.available) {
+    assert.equal(standard.cost.amount, 18);
+    assert.equal(longContext.cost.amount, 18);
+  }
+});
+
+test("Claude Sonnet 5 rate switch happens exactly at 2026-09-01T00:00:00Z", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const lastIntroInstant = pricing.estimate(
+    record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-08-31T23:59:59.999Z"),
+  );
+  const boundaryInstant = pricing.estimate(
+    record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-09-01T00:00:00.000Z"),
+  );
+
+  assert.equal(lastIntroInstant.available, true);
+  assert.equal(boundaryInstant.available, true);
+  if (lastIntroInstant.available && boundaryInstant.available) {
+    assert.equal(lastIntroInstant.cost.amount, 12);
+    assert.equal(boundaryInstant.cost.amount, 18);
+  }
+});
+
+test("undated models keep pricing through the rule cache when dated rules exist elsewhere", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const first = pricing.estimate(record("claude", "claude-opus-4-8", { input: 1_000_000, output: 1_000_000 }));
+  const second = pricing.estimate(record("claude", "claude-opus-4-8", { input: 2_000_000, output: 2_000_000 }));
+  const sonnet = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-07-15T00:00:00.000Z"));
+
+  assert.equal(first.available, true);
+  assert.equal(second.available, true);
+  assert.equal(sonnet.available, true);
+  if (first.available && second.available && sonnet.available) {
+    assert.equal(first.cost.amount, 30);
+    assert.equal(second.cost.amount, 60);
+    assert.equal(sonnet.cost.amount, 12);
+  }
+
+  // White-box: the memoized cache must hold the undated key and never the dated one,
+  // otherwise a stale cached rule could serve the wrong dated rate.
+  const ruleCache = (pricing as unknown as { ruleCache: Map<string, unknown> }).ruleCache;
+  assert.equal(ruleCache.has("claude:claude-opus-4-8"), true);
+  assert.equal(ruleCache.has("claude:claude-sonnet-5"), false);
+});
+
 test("current catalog prices Claude Mythos 5 by id", async () => {
   const pricing = new PricingService(await srcCatalog());
   const estimate = pricing.estimate(record("claude", "claude-mythos-5", { input: 1_000_000, output: 1_000_000 }));

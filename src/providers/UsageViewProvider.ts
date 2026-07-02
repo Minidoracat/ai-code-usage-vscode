@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
 import { tokenTotal } from "../domain/math";
+import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import type {
   ImportIssue,
@@ -21,6 +22,7 @@ import pricingCatalog from "../pricing/catalog.json";
 import { PricingService } from "../services/PricingService";
 import { defaultAutoRefreshIntervalSeconds, normalizeAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { CachedUsageImporter, type CachedUsageProgress, type CachedUsageState } from "../services/CachedUsageImporter";
+import { fetchPublicExchangeRates, type PublicExchangeRates } from "../services/ExchangeRateService";
 import { isNativeUsagePath, SourceDetectionService, usageSourceCandidates } from "../services/SourceDetectionService";
 import { TimeRangeService } from "../services/TimeRangeService";
 import { defaultTimeZoneMode, isTimeZoneMode, isValidTimeZone, resolveTimeZone } from "../services/TimeZoneService";
@@ -98,6 +100,15 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         if (event.affectsConfiguration("aiCodingUsage.timeZoneMode") || event.affectsConfiguration("aiCodingUsage.customTimeZone")) {
           if (this.suppressConfigRefresh === 0) {
             void this.refresh({ allowSourcePrompt: false });
+          }
+        }
+        if (
+          event.affectsConfiguration("aiCodingUsage.displayCurrency") ||
+          event.affectsConfiguration("aiCodingUsage.exchangeRates") ||
+          event.affectsConfiguration("aiCodingUsage.screenshot")
+        ) {
+          if (this.suppressConfigRefresh === 0) {
+            void this.replayDisplayState();
           }
         }
       }),
@@ -211,6 +222,9 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         autoRefreshIntervalSeconds: this.autoRefreshIntervalSeconds(),
         timeZone: this.timeZoneState(),
         pricing: pricingCatalog as PricingCatalog,
+        currency: this.displayCurrency(),
+        availableCurrencies: this.availableCurrencies(),
+        screenshot: this.screenshotSettings(),
         // The dashboard never reads per-file sourceMeta; dropping it saves
         // hundreds of KB per postMessage on large ranges.
         summary: { ...summary, sourceMeta: [] },
@@ -285,12 +299,71 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (request.type === "setCurrency") {
+      try {
+        await this.updateConfigSuppressed(async (config) => {
+          await config.update("displayCurrency", request.payload.code, vscode.ConfigurationTarget.Global);
+          const rates = { ...config.get<Record<string, number>>("exchangeRates", {}) };
+          if (typeof request.payload.rate === "number") {
+            rates[request.payload.code] = request.payload.rate;
+            await config.update("exchangeRates", rates, vscode.ConfigurationTarget.Global);
+            return;
+          }
+          // Empty-rate apply clears any manual entry so public rates take over.
+          const staleKeys = Object.keys(rates).filter((key) => key.trim().toUpperCase() === request.payload.code);
+          if (staleKeys.length > 0) {
+            for (const key of staleKeys) {
+              delete rates[key];
+            }
+            await config.update("exchangeRates", rates, vscode.ConfigurationTarget.Global);
+          }
+        });
+      } catch (error) {
+        await this.postError(error instanceof Error ? error.message : String(error), "config_write_failed", request.requestId, webview);
+        return;
+      }
+      await this.replayDisplayState();
+      return;
+    }
+
+    if (request.type === "refreshExchangeRates") {
+      let table;
+      try {
+        table = await fetchPublicExchangeRates();
+      } catch {
+        await this.postError(this.t("currency.updateFailed"), "exchange_rates_failed", request.requestId, webview);
+        return;
+      }
+      try {
+        await this.context.globalState.update(publicExchangeRatesKey, table);
+      } catch (error) {
+        await this.postError(error instanceof Error ? error.message : String(error), "exchange_rates_store_failed", request.requestId, webview);
+        return;
+      }
+      await this.replayDisplayState();
+      return;
+    }
+
     this.rangeKind = request.payload.kind;
     this.customRange = {
       start: request.payload.start,
       end: request.payload.end,
     };
     await this.refresh({ allowSourcePrompt: true });
+  }
+
+  /**
+   * Replays the cached summary so display-only changes (currency, screenshot,
+   * exchange rates) reach the webview without re-running the aggregate pipeline.
+   */
+  private async replayDisplayState(): Promise<void> {
+    const last = this.lastSummary;
+    if (last) {
+      this.updateStatus(last.summary);
+      await Promise.all(this.activeWebviews().map((webview) => this.postUsageData(webview, last.summary, last.at)));
+    } else {
+      await this.refresh({ allowSourcePrompt: false, reuseImports: true });
+    }
   }
 
   private async loadSummary(options: RefreshOptions = {}, run = this.refreshRun): Promise<UsageSummary> {
@@ -385,6 +458,45 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private resolvedLocale() {
     const configured = this.localePreference();
     return normalizeLocale(configured === "auto" ? vscode.env.language : configured);
+  }
+
+  private displayCurrency(): DisplayCurrencyState {
+    const config = vscode.workspace.getConfiguration("aiCodingUsage");
+    return resolveDisplayCurrencyState(
+      config.get<string>("displayCurrency", "USD"),
+      config.get<Record<string, number>>("exchangeRates", {}),
+      this.publicExchangeRates(),
+    );
+  }
+
+  private publicExchangeRates(): PublicExchangeRates | undefined {
+    const stored = this.context.globalState.get<PublicExchangeRates>(publicExchangeRatesKey);
+    return stored && typeof stored.updatedAt === "string" && typeof stored.rates === "object" && stored.rates !== null
+      ? stored
+      : undefined;
+  }
+
+  private availableCurrencies(): string[] {
+    const config = vscode.workspace.getConfiguration("aiCodingUsage");
+    const codes = new Set<string>(commonCurrencyCodes);
+    for (const key of Object.keys(config.get<Record<string, number>>("exchangeRates", {}))) {
+      const normalized = key.trim().toUpperCase();
+      if (/^[A-Z]{3}$/.test(normalized)) {
+        codes.add(normalized);
+      }
+    }
+    for (const key of Object.keys(this.publicExchangeRates()?.rates ?? {})) {
+      codes.add(key);
+    }
+    return [...codes].sort();
+  }
+
+  private screenshotSettings(): { includePricing: boolean; includeSessions: boolean } {
+    const config = vscode.workspace.getConfiguration("aiCodingUsage");
+    return {
+      includePricing: config.get<boolean>("screenshot.includePricing", false),
+      includeSessions: config.get<boolean>("screenshot.includeSessions", false),
+    };
   }
 
   private autoRefreshIntervalSeconds(): number {
@@ -546,7 +658,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private updateStatus(summary: UsageSummary): void {
     const locale = this.resolvedLocale();
     const tokens = tokenTotal(summary.totals.tokens);
-    const cost = summary.totals.cost;
+    const cost = convertCost(summary.totals.cost, this.displayCurrency());
     if (cost) {
       this.statusBarItem.text = `$(graph) ${cost.currency} ${formatCompact(cost.amount, locale)}`;
     } else if (tokens > 0) {
@@ -560,7 +672,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       this.t("app.title"),
       `${this.t("filter.timeRange")}: ${this.t(rangeLabelKey(summary.range.kind))} · ${formatRangeDates(summary.range)} · ${timeZone}`,
       `${this.t("filter.provider")}: ${formatProviderFilter(summary.providerFilter, (key) => this.t(key))}`,
-      `${this.t("metric.totalCost")}: ${formatCost(summary.totals.cost, locale, (key) => this.t(key))}`,
+      `${this.t("metric.totalCost")}: ${formatCost(cost, locale, (key) => this.t(key))}`,
       `${this.t("metric.totalTokens")}: ${formatFullNumber(tokens, locale)}`,
       `${this.t("metric.inputTokens")}: ${formatFullNumber(inputTokens(summary.totals.tokens), locale)}`,
       `${this.t("metric.outputTokens")}: ${formatFullNumber(outputTokens(summary.totals.tokens), locale)}`,
@@ -721,6 +833,9 @@ type ConfiguredUsagePath = {
   sourcePath: string;
   issue?: ImportIssue;
 };
+
+const publicExchangeRatesKey = "publicExchangeRates.v1";
+const commonCurrencyCodes = ["USD", "TWD", "JPY", "KRW", "EUR", "GBP", "CNY", "HKD", "SGD", "AUD", "CAD"];
 
 function formatCompact(value: number, locale: string): string {
   return new Intl.NumberFormat(locale, {

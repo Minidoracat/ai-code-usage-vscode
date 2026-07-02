@@ -154,5 +154,14 @@
   "range.invalidCustom": "Invalid custom dates: start must not be after end, and years must be 2000 or later.",
   "state.backgroundRefresh": "Still refreshing in the background — the dashboard will update automatically.",
   "modal.rebuildCacheConfirm": "Rebuild the usage cache? All usage files will be re-parsed; this can take from seconds up to a few minutes for large histories.",
-  "modal.rebuildCacheProceed": "Rebuild"
+  "modal.rebuildCacheProceed": "Rebuild",
+  "pricing.variesInRange": "Rates changed within this range; showing the rate effective at the range end.",
+  "currency.label": "Currency",
+  "currency.rateLabel": "Rate per 1 USD",
+  "currency.updatePublic": "Update public rates",
+  "currency.updateFailed": "Could not fetch public exchange rates. Check your network and try again.",
+  "currency.source.manual": "manual rate",
+  "currency.source.public": "public rate",
+  "currency.source.default": "default",
+  "currency.missingRate": "No rate for the selected currency yet; showing USD. Update public rates or enter one manually."
 }

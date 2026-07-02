@@ -154,5 +154,14 @@
   "range.invalidCustom": "사용자 지정 날짜가 잘못되었습니다: 시작일은 종료일보다 늦을 수 없으며 연도는 2000년 이후여야 합니다.",
   "state.backgroundRefresh": "백그라운드에서 계속 새로 고치는 중입니다. 완료되면 대시보드가 자동으로 업데이트됩니다.",
   "modal.rebuildCacheConfirm": "캐시를 다시 빌드할까요? 모든 usage 파일을 다시 구문 분석합니다. 데이터 양에 따라 수십 초에서 몇 분까지 걸릴 수 있습니다.",
-  "modal.rebuildCacheProceed": "다시 빌드"
+  "modal.rebuildCacheProceed": "다시 빌드",
+  "pricing.variesInRange": "이 기간 중 요금이 변경되었습니다. 기간 종료 시점에 유효한 요금을 표시합니다.",
+  "currency.label": "통화",
+  "currency.rateLabel": "1 USD당 환율",
+  "currency.updatePublic": "공개 환율 업데이트",
+  "currency.updateFailed": "공개 환율을 가져올 수 없습니다. 네트워크를 확인한 후 다시 시도하세요.",
+  "currency.source.manual": "수동 환율",
+  "currency.source.public": "공개 환율",
+  "currency.source.default": "기본값",
+  "currency.missingRate": "선택한 통화의 환율이 아직 없어 USD로 표시 중입니다. 공개 환율을 업데이트하거나 직접 입력하세요."
 }

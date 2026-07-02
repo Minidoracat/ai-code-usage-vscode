@@ -808,6 +808,58 @@ h2 {
   white-space: nowrap;
 }
 
+.dashboard-frame.shot-hide-pricing .pricing-panel,
+.dashboard-frame.shot-hide-sessions .sessions-panel {
+  display: none;
+}
+
+.currency-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.currency-current {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.currency-current span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.currency-current small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.currency-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.currency-code-input {
+  width: 64px;
+  text-transform: uppercase;
+}
+
+.currency-rate-input {
+  width: 130px;
+}
+
+.currency-missing-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--accent-3, #cca700);
+  font-size: 11px;
+}
+
 .pricing-panel {
   gap: 0;
 }
