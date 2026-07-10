@@ -104,11 +104,22 @@ function convertPricingRule(rule: PricingRule, currency: DisplayCurrency): Prici
   if (rule.currency !== "USD") {
     return rule;
   }
+  return {
+    ...rule,
+    currency: currency.code,
+    rates: convertRates(rule.rates, currency.rate),
+    ...(rule.longContext
+      ? { longContext: { ...rule.longContext, rates: convertRates(rule.longContext.rates, currency.rate) } }
+      : {}),
+  };
+}
+
+function convertRates(source: PricingRule["rates"], multiplier: number): PricingRule["rates"] {
   const rates: PricingRule["rates"] = {};
-  for (const [category, value] of Object.entries(rule.rates)) {
+  for (const [category, value] of Object.entries(source)) {
     if (typeof value === "number") {
-      rates[category as TokenCategory] = value * currency.rate;
+      rates[category as TokenCategory] = value * multiplier;
     }
   }
-  return { ...rule, currency: currency.code, rates };
+  return rates;
 }

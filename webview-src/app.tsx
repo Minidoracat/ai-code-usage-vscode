@@ -916,6 +916,7 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
         <div>
           <h2>{translate("section.pricing")}</h2>
           <p>{translate("pricing.formula")}</p>
+          <p class="pricing-cache-caveat">{translate("pricing.cacheWriteCaveat")}</p>
         </div>
         <span class="pricing-catalog-meta" title={pricing.sourceUrls.join("\n")}>
           {translate("pricing.catalogCheckedAt")}: {formatDateTime(pricing.checkedAt, locale, "UTC")}
@@ -931,15 +932,37 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
               </div>
               <span title={pricingRuleTooltip(rule, locale, translate)}>{translate("pricing.perMillionTokens")}</span>
             </div>
-            <div class="pricing-rate-grid">
-              {pricingRateEntries(rule).map(({ category, rate }) => (
-                <UsageMetric
-                  key={category}
-                  label={translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown")}
-                  value={formatPricingRate(rate, rule.currency, locale)}
-                />
-              ))}
+            <div class="pricing-rate-group">
+              <span class="pricing-rate-group-label">
+                {translate("pricing.baseRates")}
+                {rule.longContext ? ` · ≤${formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale)}` : ""}
+              </span>
+              <div class="pricing-rate-grid">
+                {pricingRateEntries(rule).map(({ category, rate }) => (
+                  <UsageMetric
+                    key={category}
+                    label={translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown")}
+                    value={formatPricingRate(rate, rule.currency, locale)}
+                  />
+                ))}
+              </div>
             </div>
+            {rule.longContext ? (
+              <div class="pricing-rate-group">
+                <span class="pricing-rate-group-label">
+                  {translate("pricing.longContextRates")} · &gt;{formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale)}
+                </span>
+                <div class="pricing-rate-grid">
+                  {pricingRateEntries(rule, rule.longContext.rates).map(({ category, rate }) => (
+                    <UsageMetric
+                      key={category}
+                      label={translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown")}
+                      value={formatPricingRate(rate, rule.currency, locale)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div class="pricing-rule-meta">
               {rule.effectiveFrom || rule.effectiveTo ? (
                 <span>
@@ -981,10 +1004,15 @@ function PricingSummary(props: {
   const tooltip = variesInRange
     ? `${translate("pricing.variesInRange")}\n${pricingRuleTooltip(rule, locale, translate)}`
     : pricingRuleTooltip(rule, locale, translate);
+  const badgeLines = formatPricingBadge(rule, locale, translate);
   return (
     <span class="pricing-summary" title={tooltip}>
-      {formatPricingBadge(rule, locale, translate)}
-      {variesInRange ? " *" : ""}
+      {badgeLines.map((line, index) => (
+        <span class="pricing-summary-line" key={line}>
+          {line}
+          {variesInRange && index === 0 ? " *" : ""}
+        </span>
+      ))}
     </span>
   );
 }
@@ -1386,39 +1414,72 @@ function formatSummaryCost(summary: UsageSummary, locale: string, translate: (ke
   return parts.length > 0 ? parts.join(" / ") : translate("state.unavailable");
 }
 
-function pricingRateEntries(rule: PricingRule): Array<{ category: Exclude<TokenCategory, "unknown">; rate: number }> {
+function pricingRateEntries(
+  rule: PricingRule,
+  rates: PricingRule["rates"] = rule.rates,
+): Array<{ category: Exclude<TokenCategory, "unknown">; rate: number }> {
   return pricingRateCategories.flatMap((entry) => {
-    const rate = rule.rates[entry.category];
+    const rate = rates[entry.category];
     return typeof rate === "number" ? [{ category: entry.category, rate }] : [];
   });
 }
 
-function formatPricingBadge(rule: PricingRule, locale: string, translate: (key: string) => string): string {
-  const parts: string[] = [];
-  if (typeof rule.rates.input === "number") {
-    parts.push(`${translate("pricing.shortInput")} ${formatRateAmount(rule.rates.input, locale)}`);
+function formatPricingBadge(rule: PricingRule, locale: string, translate: (key: string) => string): [string] | [string, string] {
+  const formatLine = (rates: PricingRule["rates"], threshold?: string): string => {
+    const parts: string[] = [];
+    if (typeof rates.input === "number") {
+      parts.push(`${translate("pricing.shortInput")} ${formatRateAmount(rates.input, locale)}`);
+    }
+    if (typeof rates.output === "number") {
+      parts.push(`${translate("pricing.shortOutput")} ${formatRateAmount(rates.output, locale)}`);
+    }
+    const cacheRate = rates.cachedInput ?? rates.cacheRead;
+    if (typeof cacheRate === "number") {
+      parts.push(`${translate("pricing.shortCache")} ${formatRateAmount(cacheRate, locale)}`);
+    }
+    return `${rule.currency}/1M${threshold ? ` · ${threshold}` : ""}${parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}`;
+  };
+
+  if (!rule.longContext) {
+    return [formatLine(rule.rates)];
   }
-  if (typeof rule.rates.output === "number") {
-    parts.push(`${translate("pricing.shortOutput")} ${formatRateAmount(rule.rates.output, locale)}`);
-  }
-  const cacheRate = rule.rates.cachedInput ?? rule.rates.cacheRead;
-  if (typeof cacheRate === "number") {
-    parts.push(`${translate("pricing.shortCache")} ${formatRateAmount(cacheRate, locale)}`);
-  }
-  return `${rule.currency}/1M${parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}`;
+
+  const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
+  return [formatLine(rule.rates, `≤${threshold}`), formatLine(rule.longContext.rates, `>${threshold}`)];
 }
 
 function pricingRuleTooltip(rule: PricingRule, locale: string, translate: (key: string) => string): string {
   const lines = [
     `${rule.model} · ${rule.provider}`,
-    `${translate("pricing.unit")}: ${translate("pricing.perMillionTokens")}`,
+    `${translate("pricing.unit")}: ${rule.currency} · ${translate("pricing.perMillionTokens")}`,
+  ];
+  if (rule.longContext) {
+    const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
+    lines.push(
+      `${translate("pricing.contextThreshold")}: >${threshold} (${translate("metric.inputTokens")} + ${translate("pricing.cachedInput")})`,
+      `${translate("pricing.baseRates")} · ≤${threshold}`,
+    );
+  }
+  lines.push(
     ...pricingRateEntries(rule).map(({ category, rate }) => {
       const label = translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown");
       return `${label}: ${formatPricingRate(rate, rule.currency, locale)}`;
     }),
+  );
+  if (rule.longContext) {
+    const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
+    lines.push(
+      `${translate("pricing.longContextRates")} · >${threshold}`,
+      ...pricingRateEntries(rule, rule.longContext.rates).map(({ category, rate }) => {
+        const label = translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown");
+        return `${label}: ${formatPricingRate(rate, rule.currency, locale)}`;
+      }),
+    );
+  }
+  lines.push(
     `${translate("pricing.checkedAt")}: ${formatDateTime(rule.checkedAt, locale, "UTC")}`,
     `${translate("pricing.source")}: ${rule.sourceUrl}`,
-  ];
+  );
   if (rule.effectiveFrom || rule.effectiveTo) {
     lines.push(
       `${translate("pricing.effective")}: ${rule.effectiveFrom ? formatDateTime(rule.effectiveFrom, locale, "UTC") : "∞"} - ${
@@ -1435,6 +1496,10 @@ function formatPricingRate(rate: number, currency: string, locale: string): stri
 
 function formatRateAmount(rate: number, locale: string): string {
   return cachedNumberFormat(locale, { maximumFractionDigits: rate < 1 ? 4 : 2 }).format(rate);
+}
+
+function formatTokenThreshold(tokens: number, locale: string): string {
+  return tokens % 1_000 === 0 ? `${formatNumber(tokens / 1_000, locale)}K` : formatNumber(tokens, locale);
 }
 
 function formatAliases(aliases: string[], translate: (key: string) => string): string {
@@ -1772,7 +1837,7 @@ function renderDashboardReportPng(options: ReportRenderOptions): string {
   const chartHeightValue = 300;
   const providerHeight = 92 + Math.max(0, options.summary.providerSplit.length - 1) * 28;
   const modelHeight = models.length > 0 ? 44 + models.length * 78 : 0;
-  const pricingHeight = pricingRules.length > 0 ? 44 + pricingRules.length * 28 : 0;
+  const pricingHeight = pricingRules.length > 0 ? 44 + pricingRules.reduce((height, rule) => height + (rule.longContext ? 44 : 28), 0) : 0;
   const sessionHeight = sessions.length > 0 ? 58 + sessions.length * 28 : 0;
   const issueHeight = options.summary.errors.length + options.summary.warnings.length > 0 ? 88 : 0;
   const controlsHeight = 78;
@@ -2052,22 +2117,28 @@ function drawReportModels(report: ReportCanvas, options: ReportRenderOptions, y:
 }
 
 function drawReportPricing(report: ReportCanvas, options: ReportRenderOptions, y: number, width: number, rules: PricingRule[]): number {
-  const height = 44 + rules.length * 28;
+  const height = 44 + rules.reduce((total, rule) => total + (rule.longContext ? 44 : 28), 0);
   drawReportCard(report, report.margin, y, width, height);
   setReportFont(report, 12, 700);
   report.context.fillStyle = report.palette.muted;
   report.context.fillText(options.translate("section.pricing"), report.margin + 14, y + 24);
-  rules.forEach((rule, index) => {
+  let rowOffset = 0;
+  rules.forEach((rule) => {
     const color = rule.provider === "claude" ? report.palette.claude : report.palette.codex;
-    const rowY = y + 42 + index * 28;
+    const rowY = y + 42 + rowOffset;
+    const badgeLines = formatPricingBadge(rule, options.locale, options.translate);
     setReportFont(report, 12, 600);
     report.context.fillStyle = color;
     drawClippedText(report, rule.model, report.margin + 14, rowY + 10, 300);
     setReportFont(report, 11, 500);
     report.context.fillStyle = report.palette.text;
     report.context.textAlign = "right";
-    drawClippedTextRight(report, formatPricingBadge(rule, options.locale, options.translate), report.margin + width - 14, rowY + 10, width - 340);
+    drawClippedTextRight(report, badgeLines[0], report.margin + width - 14, rowY + 10, width - 340);
+    if (badgeLines[1]) {
+      drawClippedTextRight(report, badgeLines[1], report.margin + width - 14, rowY + 26, width - 340);
+    }
     report.context.textAlign = "left";
+    rowOffset += rule.longContext ? 44 : 28;
   });
   return y + height;
 }

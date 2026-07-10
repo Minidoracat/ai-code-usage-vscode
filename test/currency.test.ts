@@ -130,6 +130,10 @@ test("convertPricingCatalog converts rates and currency labels", () => {
         sourceUrl: "https://example.com",
         checkedAt: "2026-07-01T00:00:00.000Z",
         rates: { input: 3, output: 15 },
+        longContext: {
+          appliesAboveInputTokens: 272_000,
+          rates: { input: 6, output: 22.5 },
+        },
       },
     ],
   } as unknown as PricingCatalog;
@@ -140,4 +144,7 @@ test("convertPricingCatalog converts rates and currency labels", () => {
   assert.equal(converted.rules[0]?.currency, "JPY");
   assert.equal(converted.rules[0]?.rates.input, 450);
   assert.equal(converted.rules[0]?.rates.output, 2250);
+  assert.equal(converted.rules[0]?.longContext?.appliesAboveInputTokens, 272_000);
+  assert.equal(converted.rules[0]?.longContext?.rates.input, 900);
+  assert.equal(converted.rules[0]?.longContext?.rates.output, 3375);
 });

@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-07-02T00:00:00.000Z",
+  "checkedAt": "2026-07-10T00:00:00.000Z",
   "sourceUrls": [
     "https://developers.openai.com/codex/pricing",
     "https://developers.openai.com/api/docs/pricing",
@@ -9,6 +9,74 @@
   "rules": [
     {
       "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "modelAliases": [
+        "gpt-5.6"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-07-10T00:00:00.000Z",
+      "rates": {
+        "input": 5,
+        "cachedInput": 0.5,
+        "output": 30
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 10,
+          "cachedInput": 1,
+          "output": 45
+        }
+      }
+    },
+    {
+      "provider": "codex",
+      "model": "gpt-5.6-terra",
+      "modelAliases": [],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-07-10T00:00:00.000Z",
+      "rates": {
+        "input": 2.5,
+        "cachedInput": 0.25,
+        "output": 15
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 5,
+          "cachedInput": 0.5,
+          "output": 22.5
+        }
+      }
+    },
+    {
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "modelAliases": [],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-07-10T00:00:00.000Z",
+      "rates": {
+        "input": 1,
+        "cachedInput": 0.1,
+        "output": 6
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 2,
+          "cachedInput": 0.2,
+          "output": 9
+        }
+      }
+    },
+    {
+      "provider": "codex",
       "model": "gpt-5.5",
       "modelAliases": [
         "GPT-5.5"
@@ -16,11 +84,19 @@
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
       "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-      "checkedAt": "2026-05-01T00:00:00.000Z",
+      "checkedAt": "2026-07-10T00:00:00.000Z",
       "rates": {
         "input": 5,
         "cachedInput": 0.5,
         "output": 30
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 10,
+          "cachedInput": 1,
+          "output": 45
+        }
       }
     },
     {
@@ -32,11 +108,19 @@
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
       "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-      "checkedAt": "2026-05-01T00:00:00.000Z",
+      "checkedAt": "2026-07-10T00:00:00.000Z",
       "rates": {
         "input": 2.5,
         "cachedInput": 0.25,
         "output": 15
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 5,
+          "cachedInput": 0.5,
+          "output": 22.5
+        }
       }
     },
     {

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.6 - 2026-07-10
+
+### Added
+
+- GPT-5.6 Sol, Terra, and Luna pricing, with `gpt-5.6` as an alias for Sol, plus official long-context rates for GPT-5.5 and GPT-5.4.
+
+### Changed
+
+- Long-context pricing now uses a strict per-record `input + cachedInput > 272K` threshold and applies the selected base or long-context tier to the whole record.
+- Pricing cards, model badges, tooltips, and fallback canvas reports now show distinct base and long-context rates without overlapping or clipping adjacent rules.
+- Clarified the Codex-only cache-write limitation: local Codex JSONL has no structured `cache_write_tokens`, so unreported cache-write usage is not inferred; Claude `cacheWrite5m` and `cacheWrite1h` remain supported when present.
+
 ## 0.1.5 - 2026-07-02
 
 ### Added

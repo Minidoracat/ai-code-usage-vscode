@@ -5,7 +5,7 @@
   --surface: var(--vscode-editor-background);
   --surface-muted: var(--vscode-sideBar-background);
   --border: var(--vscode-panel-border, rgba(127, 127, 127, 0.22));
-  --text: var(--vscode-sideBar-foreground);
+  --text: var(--vscode-sideBar-foreground, var(--vscode-foreground));
   --muted: var(--vscode-descriptionForeground);
   --accent: var(--vscode-charts-blue, #3794ff);
   --accent-2: var(--vscode-charts-green, #89d185);
@@ -729,16 +729,25 @@ h2 {
 }
 
 .pricing-summary {
-  overflow: hidden;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
   color: var(--muted);
   cursor: help;
   font-size: 11px;
+}
+
+.pricing-summary-line {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .pricing-summary.missing {
+  overflow: hidden;
   color: var(--accent-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cost-value-wrap {
@@ -909,6 +918,10 @@ h2 {
   line-height: 1.45;
 }
 
+.pricing-heading .pricing-cache-caveat {
+  color: var(--accent-3);
+}
+
 .pricing-catalog-meta {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -979,6 +992,18 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.pricing-rate-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pricing-rate-group-label {
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .pricing-rate-grid div {
@@ -1444,6 +1469,15 @@ td.numeric {
   .summary-metric-grid,
   .pricing-rate-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pricing-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pricing-catalog-meta {
+    grid-column: 2;
+    white-space: normal;
   }
 }
 

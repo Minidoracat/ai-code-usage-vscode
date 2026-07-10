@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import type { AdapterImportResult, UsageRecord } from "../src/domain/types";
+import type { AdapterImportResult, PricingCatalog, UsageRecord } from "../src/domain/types";
+import { PricingService } from "../src/services/PricingService";
 import { UsageAggregator } from "../src/services/UsageAggregator";
 import { TimeRangeService } from "../src/services/TimeRangeService";
 import { resolveTimeZone } from "../src/services/TimeZoneService";
@@ -210,6 +212,36 @@ test("partial cost coverage is marked on cost totals", () => {
   assert.equal(summary.totals.cost?.amount, 1);
   assert.equal(summary.totals.cost?.currency, "USD");
   assert.equal(summary.totals.cost?.note, "partial");
+});
+
+test("aggregator keeps long-context pricing per record instead of repricing the session total", async () => {
+  const catalog = JSON.parse(await readFile("src/pricing/catalog.json", "utf8")) as PricingCatalog;
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
+  const source = {
+    sourcePath: "fixture",
+    sourceKind: "json" as const,
+    parserVersion: "test",
+    readAt: "2026-04-30T12:00:00.000Z",
+  };
+  const records = ["2026-04-30T12:00:00.000Z", "2026-04-30T12:01:00.000Z"].map(
+    (timestamp): UsageRecord => ({
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      sessionId: "same-session",
+      startedAt: timestamp,
+      observedAt: timestamp,
+      tokens: { input: 200_000 },
+      source,
+    }),
+  );
+  const summary = new UsageAggregator(new PricingService(catalog)).aggregate(
+    [{ provider: "codex", records, warnings: [], errors: [], sourceMeta: [] }],
+    range,
+  );
+
+  assert.equal(summary.totals.tokens.input, 400_000);
+  assert.equal(summary.totals.cost?.amount, 2);
+  assert.equal(summary.sessions[0]?.cost?.amount, 2);
 });
 
 function records(): UsageRecord[] {

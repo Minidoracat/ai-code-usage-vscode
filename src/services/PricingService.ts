@@ -61,11 +61,15 @@ export class PricingService {
       return { available: false, reason: "unknown_model" };
     }
 
+    const rates =
+      rule.longContext && (record.tokens.input ?? 0) + (record.tokens.cachedInput ?? 0) > rule.longContext.appliesAboveInputTokens
+        ? rule.longContext.rates
+        : rule.rates;
     const amount = Object.entries(record.tokens).reduce((total, [category, count]) => {
       if (typeof count !== "number") {
         return total;
       }
-      const rate = rule.rates[category as keyof typeof rule.rates];
+      const rate = rates[category as keyof typeof rates];
       if (typeof rate !== "number") {
         return total;
       }
@@ -162,6 +166,9 @@ export function validatePricingMetadata(catalog: PricingCatalog): { ok: true } |
     if (rule.effectiveFrom && rule.effectiveTo && new Date(rule.effectiveFrom).getTime() >= new Date(rule.effectiveTo).getTime()) {
       return { ok: false, reason: "missing_pricing_metadata" };
     }
+    if (!validLongContext(rule)) {
+      return { ok: false, reason: "missing_pricing_metadata" };
+    }
   }
 
   return { ok: true };
@@ -197,4 +204,33 @@ function validRequiredIso(value: unknown): value is string {
 
 function validOptionalIso(value: unknown): value is string | undefined {
   return value === undefined || validRequiredIso(value);
+}
+
+function validLongContext(rule: PricingRule): boolean {
+  const longContext: unknown = rule.longContext;
+  if (longContext === undefined) {
+    return true;
+  }
+  if (!isRecord(longContext)) {
+    return false;
+  }
+  const threshold = longContext["appliesAboveInputTokens"];
+  const rates = longContext["rates"];
+  if (typeof threshold !== "number" || !Number.isSafeInteger(threshold) || threshold <= 0 || !isRecord(rates)) {
+    return false;
+  }
+  const entries = Object.entries(rates);
+  if (entries.length === 0 || entries.some(([, rate]) => typeof rate !== "number" || !Number.isFinite(rate) || rate < 0)) {
+    return false;
+  }
+  if (!isRecord(rule.rates)) {
+    return false;
+  }
+  const baseKeys = Object.keys(rule.rates).sort();
+  const longKeys = Object.keys(rates).sort();
+  return baseKeys.length === longKeys.length && baseKeys.every((key, index) => key === longKeys[index]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
