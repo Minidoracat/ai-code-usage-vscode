@@ -19,6 +19,7 @@ import { JsonUsageAdapter } from "./JsonUsageAdapter";
  * and (with the shared normalizeCost extension) the imported USD cost via
  * `message.usage.cost.total`. This adapter only fixes the provider identity.
  */
+/** opencode usage from pi agent session transcripts with real opencode-go billing. */
 export class OpenCodeUsageAdapter extends JsonUsageAdapter {
   public override readonly provider = "opencode" as const;
 }

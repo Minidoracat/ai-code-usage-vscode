@@ -907,6 +907,7 @@ function requestIdFrom(message: unknown): string {
   return "unknown";
 }
 
+/** Builds the adapter matching a provider (claude/codex/opencode). */
 function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): ClaudeUsageAdapter | CodexUsageAdapter | OpenCodeUsageAdapter {
   switch (provider) {
     case "codex":

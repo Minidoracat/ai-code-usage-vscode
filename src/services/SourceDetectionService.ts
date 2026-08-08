@@ -59,6 +59,7 @@ export function usageSourceCandidates(
  * meaningful when that directory actually exists (checked by the caller via
  * countUsageFiles), so a missing env var or directory degrades gracefully.
  */
+/** Resolves the pi agent sessions directory, honoring PI_CODING_AGENT_DIR. */
 function opencodeSessionsPath(pathApi: typeof path | typeof path.win32, homeRoot: string, environment: NodeJS.ProcessEnv): string {
   const envDir = environment["PI_CODING_AGENT_DIR"];
   if (envDir && typeof envDir === "string" && envDir.trim()) {

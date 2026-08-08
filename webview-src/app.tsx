@@ -807,6 +807,7 @@ function LoadingRangeSummary(props: {
   );
 }
 
+/** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
 function formatRangeBoundary(range: { startDate: string; endDate: string; startHour?: string; endHour?: string }, side: "start" | "end"): string {
   const date = side === "start" ? range.startDate : range.endDate;
   const hour = side === "start" ? range.startHour : range.endHour;
@@ -1433,6 +1434,7 @@ function cacheReadTokens(tokens: TokenBreakdown | undefined): number {
   return (tokens?.cacheRead ?? 0) + (tokens?.cachedInput ?? 0);
 }
 
+/** Cache-hit ratio of input tokens; em dash when there is no input activity. */
 function cacheRateText(tokens: TokenBreakdown | undefined, locale: string): string {
   const read = cacheReadTokens(tokens);
   const total = (tokens?.input ?? 0) + read;
@@ -1722,10 +1724,12 @@ function formatShortDate(value: number, locale: string): string {
   return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: "UTC" }).format(new Date(value * 1000));
 }
 
+/** Formats an epoch second as a local HH:MM label for hourly trend axes. */
 function formatShortHour(value: number, locale: string, timeZone: string): string {
   return cachedDateFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(value * 1000));
 }
 
+/** Converts a day or hour bucket key to an epoch second, honoring the time zone for hour keys. */
 function dateKeyTimestamp(value: string, timeZone?: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (match) {
@@ -1738,6 +1742,7 @@ function dateKeyTimestamp(value: string, timeZone?: string): number {
   return Number.NaN;
 }
 
+/** Offset in ms between the target zone wall clock and the given UTC instant. */
 function tzOffsetMs(date: Date, timeZone: string): number {
   const parts: Record<string, number> = {};
   for (const part of new Intl.DateTimeFormat("en-US", {
@@ -1757,6 +1762,7 @@ function tzOffsetMs(date: Date, timeZone: string): number {
   return Date.UTC(parts.year ?? 1970, (parts.month ?? 1) - 1, parts.day ?? 1, parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0) - date.getTime();
 }
 
+/** Local wall-clock fields to epoch ms via two-pass offset correction (DST-safe). */
 function zonedLocalTimeToUtcEpoch(year: number, month: number, day: number, hour: number, timeZone: string): number {
   const utcGuess = Date.UTC(year, month - 1, day, hour);
   const firstPass = utcGuess - tzOffsetMs(new Date(utcGuess), timeZone);
@@ -1800,6 +1806,7 @@ function isValidCustomRange(start: string | undefined, end: string | undefined):
   return start >= minimumCustomDate && end >= start;
 }
 
+/** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
 /** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
 function parseHourKey(value: string | undefined): string | undefined {
   const match = /^(\d{1,2})(?::00)?$/.exec((value ?? "").trim());

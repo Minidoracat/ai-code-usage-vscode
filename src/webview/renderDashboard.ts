@@ -134,6 +134,7 @@ function renderLoadingRange(state: DashboardLoadingState): string {
 }
 
 /** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
+/** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
 function formatRangeBoundaryHtml(range: { startDate: string; endDate: string; startHour?: string; endHour?: string }, side: "start" | "end"): string {
   const date = side === "start" ? range.startDate : range.endDate;
   const hour = side === "start" ? range.startHour : range.endHour;

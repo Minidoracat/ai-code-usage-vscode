@@ -225,6 +225,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
    * retry after a short delay. Returns { ok: true, content } when stable,
    * or { ok: false } when the file is still being written between attempts.
    */
+/** Reads a text file with a before/after stat stability check and one retry. */
   private async readTextStable(filePath: string): Promise<{ ok: true; content: string } | { ok: false }> {
     const readOnce = async () => {
       const before = await statOrUndefined(filePath);
@@ -651,6 +652,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Stats a file, returning undefined when it cannot be read. */
 async function statOrUndefined(filePath: string): Promise<{ size: number; mtimeMs: number } | undefined> {
   try {
     const stat = await fs.stat(filePath);
@@ -660,6 +662,7 @@ async function statOrUndefined(filePath: string): Promise<{ size: number; mtimeM
   }
 }
 
+/** True when both stats exist and the file fingerprint did not change. */
 function statStable(before: { size: number; mtimeMs: number } | undefined, after: { size: number; mtimeMs: number } | undefined): boolean {
   return Boolean(before && after && before.size === after.size && before.mtimeMs === after.mtimeMs);
 }

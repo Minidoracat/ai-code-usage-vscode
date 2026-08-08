@@ -49,6 +49,7 @@ export function zonedDateKey(date: Date, timeZone: string): string {
  * zonedParts resolves the actual local wall-clock fields, so hour keys stay
  * contiguous across DST shifts (each local hour still gets its own bucket).
  */
+/** Local-hour key for a timestamp, e.g. "2026-08-08T14" in the target zone. */
 export function zonedHourKey(epochMs: number, timeZone: string): string {
   const parts = zonedParts(new Date(epochMs), timeZone);
   return `${dateKey(parts.year, parts.month, parts.day)}T${String(parts.hour).padStart(2, "0")}`;
@@ -60,6 +61,7 @@ export function zonedHourKey(epochMs: number, timeZone: string): string {
  * in the target time zone (zero-padded hour). Timestamps outside the
  * precomputed window fall back to zonedHourKey.
  */
+/** Precomputes local-hour boundaries for an ISO range so per-record bucketing is a binary search. */
 export function makeZonedHourBucketer(startIso: string, endIso: string, timeZone: string): (epochMs: number) => string {
   const keys: string[] = [];
   const boundaries: number[] = [];
@@ -198,6 +200,7 @@ export function zonedDateTimeToUtcIso(date: string, side: "start" | "end", timeZ
  * time zone: side "start" = HH:00:00.000, side "end" = HH:59:59.999.
  * Returns undefined for malformed keys or out-of-range hours.
  */
+/** Resolves a local "YYYY-MM-DDTHH" hour key to an ISO instant (HH:00:00.000 start / HH:59:59.999 end). */
 export function zonedDateTimeHourToUtcIso(dateHourKey: string, side: "start" | "end", timeZone: string): string | undefined {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})$/.exec(dateHourKey);
   if (!match) {
