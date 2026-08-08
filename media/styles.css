@@ -14,6 +14,8 @@
   --provider-claude-soft: rgba(217, 119, 87, 0.16);
   --provider-codex: #10a37f;
   --provider-codex-soft: rgba(16, 163, 127, 0.16);
+  --provider-opencode: #3b82f6;
+  --provider-opencode-soft: rgba(59, 130, 246, 0.16);
 }
 
 body {
@@ -251,9 +253,14 @@ h2 {
 
 .custom-row label {
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 6px;
   min-width: 0;
   color: var(--muted);
+}
+
+.custom-row label > span {
+  grid-column: 1 / -1;
 }
 
 .custom-row input {
@@ -421,6 +428,11 @@ h2 {
 .provider-filter-button.provider-codex.active {
   background: var(--provider-codex-soft);
   box-shadow: inset 0 0 0 1px var(--provider-codex);
+}
+
+.provider-filter-button.provider-opencode.active {
+  background: var(--provider-opencode-soft);
+  box-shadow: inset 0 0 0 1px var(--provider-opencode);
 }
 
 .busy-strip {
@@ -671,6 +683,10 @@ h2 {
   background: var(--provider-codex);
 }
 
+.provider-opencode .bar i {
+  background: var(--provider-opencode);
+}
+
 .model-usage-panel {
   gap: 9px;
 }
@@ -696,6 +712,10 @@ h2 {
 
 .model-usage-card.provider-codex {
   background: color-mix(in srgb, var(--surface) 90%, var(--provider-codex) 10%);
+}
+
+.model-usage-card.provider-opencode {
+  background: color-mix(in srgb, var(--surface) 90%, var(--provider-opencode) 10%);
 }
 
 .model-title-stack {
@@ -726,6 +746,10 @@ h2 {
 
 .model-usage-card.provider-codex .model-usage-header strong {
   color: var(--provider-codex);
+}
+
+.model-usage-card.provider-opencode .model-usage-header strong {
+  color: var(--provider-opencode);
 }
 
 .pricing-summary {
@@ -786,7 +810,7 @@ h2 {
 
 .usage-metric-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(72px, 1fr));
+  grid-template-columns: repeat(6, minmax(48px, 1fr));
   gap: 8px;
   margin: 0;
 }
@@ -853,14 +877,6 @@ h2 {
   gap: 8px;
 }
 
-.currency-code-input {
-  width: 64px;
-  text-transform: uppercase;
-}
-
-.currency-rate-input {
-  width: 130px;
-}
 
 .currency-missing-hint {
   flex-basis: 100%;
@@ -951,6 +967,10 @@ h2 {
   border-color: color-mix(in srgb, var(--provider-codex) 42%, var(--border));
 }
 
+.pricing-rule-card.provider-opencode {
+  border-color: color-mix(in srgb, var(--provider-opencode) 42%, var(--border));
+}
+
 .pricing-rule-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -978,6 +998,10 @@ h2 {
 
 .pricing-rule-card.provider-codex .pricing-rule-header strong {
   color: var(--provider-codex);
+}
+
+.pricing-rule-card.provider-opencode .pricing-rule-header strong {
+  color: var(--provider-opencode);
 }
 
 .pricing-rule-header > span {
@@ -1066,6 +1090,10 @@ h2 {
   background: var(--provider-codex);
 }
 
+.provider-badge.provider-opencode i {
+  background: var(--provider-opencode);
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--border);
@@ -1142,6 +1170,21 @@ td.numeric {
   padding: 7px;
   border-radius: var(--radius);
   background: var(--vscode-inputValidation-warningBackground, transparent);
+  border-left-width: 3px;
+  border-left-style: solid;
+  border-left-color: transparent;
+}
+
+.issue-list p.provider-claude {
+  border-left-color: var(--provider-claude);
+}
+
+.issue-list p.provider-codex {
+  border-left-color: var(--provider-codex);
+}
+
+.issue-list p.provider-opencode {
+  border-left-color: var(--provider-opencode);
 }
 
 .issue-list strong {
@@ -1288,6 +1331,10 @@ td.numeric {
 
 .loading-source.codex {
   border-left-color: var(--provider-codex);
+}
+
+.loading-source.opencode {
+  border-left-color: var(--provider-opencode);
 }
 
 .loading-source.invalid {
@@ -1518,4 +1565,14 @@ td.numeric {
   .segmented.pending::after {
     animation: none;
   }
+}
+.custom-hour-input {
+  inline-size: 96px;
+  min-width: 0;
+  min-height: 28px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--radius);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  padding: 3px 6px;
 }

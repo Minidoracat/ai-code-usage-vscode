@@ -19,5 +19,6 @@
   "configuration.displayCurrency.description": "Display currency for costs, as a 3-letter code such as USD, TWD, JPY, or EUR. Costs are calculated in USD and converted for display. Manual rates in `aiCodingUsage.exchangeRates` take precedence over public rates fetched with the dashboard's update button; falls back to USD when no rate is available.",
   "configuration.exchangeRates.description": "Manual exchange rates per 1 USD, for example `{\"TWD\": 32.5, \"JPY\": 155}`. Manual rates override public rates fetched with the dashboard's \"Update public rates\" button. Nothing is fetched automatically.",
   "configuration.screenshotIncludePricing.description": "Include the pricing rules panel in the full-page screenshot copy.",
-  "configuration.screenshotIncludeSessions.description": "Include the sessions table in the full-page screenshot copy."
+  "configuration.screenshotIncludeSessions.description": "Include the sessions table in the full-page screenshot copy.",
+  "configuration.opencodeUsagePath.description": "Local opencode usage path (pi agent session transcripts). Leave empty to automatically apply detected local sources."
 }

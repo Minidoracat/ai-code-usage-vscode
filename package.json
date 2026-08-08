@@ -105,6 +105,11 @@
           "default": "",
           "markdownDescription": "%configuration.codexUsagePath.description%"
         },
+        "aiCodingUsage.opencode.usagePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%configuration.opencodeUsagePath.description%"
+        },
         "aiCodingUsage.defaultRange": {
           "type": "string",
           "default": "thisWeek",

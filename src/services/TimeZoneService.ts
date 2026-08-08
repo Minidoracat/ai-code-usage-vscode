@@ -44,6 +44,79 @@ export function zonedDateKey(date: Date, timeZone: string): string {
   return dateKey(parts.year, parts.month, parts.day);
 }
 
+/**
+ * Local-hour key for a timestamp, e.g. "2026-08-08T14" in the target zone.
+ * zonedParts resolves the actual local wall-clock fields, so hour keys stay
+ * contiguous across DST shifts (each local hour still gets its own bucket).
+ */
+export function zonedHourKey(epochMs: number, timeZone: string): string {
+  const parts = zonedParts(new Date(epochMs), timeZone);
+  return `${dateKey(parts.year, parts.month, parts.day)}T${String(parts.hour).padStart(2, "0")}`;
+}
+
+/**
+ * Precomputes local-hour boundaries for an ISO range so per-record bucketing
+ * is a binary search, mirroring makeZonedDayBucketer. Keys are "YYYY-MM-DDTHH"
+ * in the target time zone (zero-padded hour). Timestamps outside the
+ * precomputed window fall back to zonedHourKey.
+ */
+export function makeZonedHourBucketer(startIso: string, endIso: string, timeZone: string): (epochMs: number) => string {
+  const keys: string[] = [];
+  const boundaries: number[] = [];
+  let lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  try {
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+      throw new Error("invalid range");
+    }
+    const firstMs = Math.min(startMs, endMs);
+    const lastMs = Math.max(startMs, endMs);
+    // Round the window start down to the local hour boundary, then walk one
+    // local hour at a time. The hour count is bounded by the caller's
+    // granularity choice (<= 48h ranges), plus a hard cap as a safety net.
+    const maxPrecomputedHours = 192;
+    const startParts = zonedParts(new Date(firstMs), timeZone);
+    const cursor = zonedLocalTimeToUtc(startParts.year, startParts.month, startParts.day, startParts.hour, 0, 0, 0, timeZone).getTime();
+    for (let index = 0; index < maxPrecomputedHours && cursor + index * 3_600_000 <= lastMs; index += 1) {
+      const boundaryMs = cursor + index * 3_600_000;
+      keys.push(zonedHourKey(boundaryMs, timeZone));
+      boundaries.push(boundaryMs);
+    }
+    if (keys.length > 0) {
+      const lastBoundary = boundaries[boundaries.length - 1];
+      if (lastBoundary !== undefined) {
+        lastBoundaryEnd = lastBoundary + 3_600_000;
+      }
+    }
+  } catch {
+    keys.length = 0;
+    boundaries.length = 0;
+    lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  }
+  return (epochMs: number): string => {
+    const firstBoundary = boundaries[0];
+    if (keys.length === 0 || firstBoundary === undefined || epochMs < firstBoundary || epochMs > lastBoundaryEnd) {
+      return zonedHourKey(epochMs, timeZone);
+    }
+    let low = 0;
+    let high = boundaries.length - 1;
+    let found = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const boundary = boundaries[mid];
+      if (boundary !== undefined && boundary <= epochMs) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    const key = keys[found];
+    return key ?? zonedHourKey(epochMs, timeZone);
+  };
+}
+
 const maxPrecomputedBucketDays = 4_000;
 
 /**
@@ -118,6 +191,29 @@ export function zonedDateTimeToUtcIso(date: string, side: "start" | "end", timeZ
   const second = side === "start" ? 0 : 59;
   const millisecond = side === "start" ? 0 : 999;
   return zonedLocalTimeToUtc(parts.year, parts.month, parts.day, hour, minute, second, millisecond, timeZone).toISOString();
+}
+
+/**
+ * Resolves a local "YYYY-MM-DDTHH" hour key to an ISO instant in the target
+ * time zone: side "start" = HH:00:00.000, side "end" = HH:59:59.999.
+ * Returns undefined for malformed keys or out-of-range hours.
+ */
+export function zonedDateTimeHourToUtcIso(dateHourKey: string, side: "start" | "end", timeZone: string): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})$/.exec(dateHourKey);
+  if (!match) {
+    return undefined;
+  }
+  const hour = Number(match[4]);
+  if (hour > 23) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (side === "start") {
+    return zonedLocalTimeToUtc(year, month, day, hour, 0, 0, 0, timeZone).toISOString();
+  }
+  return zonedLocalTimeToUtc(year, month, day, hour, 59, 59, 999, timeZone).toISOString();
 }
 
 export function addDateKeyDays(value: string, days: number): string {

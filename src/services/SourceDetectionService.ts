@@ -48,7 +48,23 @@ export function usageSourceCandidates(
   return homeRoots.flatMap((homeRoot) => [
     { provider: "claude" as const, sourcePath: pathApi.join(homeRoot, ".claude", "projects") },
     { provider: "codex" as const, sourcePath: pathApi.join(homeRoot, ".codex", "sessions") },
+    { provider: "opencode" as const, sourcePath: opencodeSessionsPath(pathApi, homeRoot, environment) },
   ]);
+}
+
+/**
+ * opencode usage lives in pi agent session transcripts. The pi agent's data
+ * directory is overridable via PI_CODING_AGENT_DIR; otherwise it defaults to
+ * the VSCode remote extension globalStorage location. The candidate is only
+ * meaningful when that directory actually exists (checked by the caller via
+ * countUsageFiles), so a missing env var or directory degrades gracefully.
+ */
+function opencodeSessionsPath(pathApi: typeof path | typeof path.win32, homeRoot: string, environment: NodeJS.ProcessEnv): string {
+  const envDir = environment["PI_CODING_AGENT_DIR"];
+  if (envDir && typeof envDir === "string" && envDir.trim()) {
+    return pathApi.join(envDir, "sessions");
+  }
+  return pathApi.join(homeRoot, ".vscode-server", "data", "User", "globalStorage", "cdervis.vscode-pi", "bundled-pi-agent", "sessions");
 }
 
 export function isNativeUsagePath(value: string | undefined, platform = process.platform): boolean {

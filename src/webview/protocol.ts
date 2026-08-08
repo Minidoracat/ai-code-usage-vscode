@@ -207,7 +207,7 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setProvider" && isObject(value["payload"])) {
     const provider = value["payload"]["provider"];
-    if (provider === "all" || provider === "claude" || provider === "codex") {
+    if (provider === "all" || provider === "claude" || provider === "codex" || provider === "opencode") {
       return {
         requestId: value["requestId"],
         type: "setProvider",

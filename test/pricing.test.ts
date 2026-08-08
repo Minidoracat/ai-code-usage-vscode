@@ -188,8 +188,8 @@ test("current catalog prices GPT-5.6 canonical ids and alias", async () => {
   const pricing = new PricingService(await srcCatalog());
   for (const [model, baseAmount, longAmount] of [
     ["gpt-5.6-sol", 0.5, 56],
-    ["gpt-5.6-terra", 0.25, 28],
-    ["gpt-5.6-luna", 0.1, 11.2],
+    ["gpt-5.6-terra", 0.2, 22.4],
+    ["gpt-5.6-luna", 0.02, 2.24],
     ["gpt-5.6", 0.5, 56],
   ] as const) {
     const base = pricing.estimate(record("codex", model, { input: 100_000 }));

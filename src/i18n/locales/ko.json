@@ -40,6 +40,8 @@
   "filter.timeRange": "시간 범위",
   "field.startDate": "시작일",
   "field.endDate": "종료일",
+  "field.startHour": "시작 시",
+  "field.endHour": "종료 시",
   "filter.provider": "제공자",
   "filter.all": "전체",
   "metric.totalCost": "API 환산 비용",
@@ -52,6 +54,7 @@
   "metric.outputTokens": "출력 Token",
   "metric.cacheCreate": "캐시 생성",
   "metric.cacheRead": "캐시 읽기",
+  "metric.cacheRate": "캐시 비율",
   "metric.messages": "메시지 수",
   "metric.costPerMessage": "메시지당 비용",
   "metric.tokensPerMessage": "메시지당 Token",
@@ -161,11 +164,13 @@
   "modal.rebuildCacheProceed": "다시 빌드",
   "pricing.variesInRange": "이 기간 중 요금이 변경되었습니다. 기간 종료 시점에 유효한 요금을 표시합니다.",
   "currency.label": "통화",
-  "currency.rateLabel": "1 USD당 환율",
   "currency.updatePublic": "공개 환율 업데이트",
   "currency.updateFailed": "공개 환율을 가져올 수 없습니다. 네트워크를 확인한 후 다시 시도하세요.",
   "currency.source.manual": "수동 환율",
   "currency.source.public": "공개 환율",
   "currency.source.default": "기본값",
-  "currency.missingRate": "선택한 통화의 환율이 아직 없어 USD로 표시 중입니다. 공개 환율을 업데이트하거나 직접 입력하세요."
+  "currency.missingRate": "선택한 통화의 환율이 아직 없어 USD로 표시 중입니다. 공개 환율을 업데이트하거나 직접 입력하세요.",
+  "currency.quickLabel": "자주 쓰는",
+  "currency.applied": "표시 통화가 {code}(으)로 전환되었습니다",
+  "currency.codePlaceholder": "통화 코드(예: USD, CNY)"
 }

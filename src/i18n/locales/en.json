@@ -40,6 +40,8 @@
   "filter.timeRange": "Time range",
   "field.startDate": "Start date",
   "field.endDate": "End date",
+  "field.startHour": "Start hour",
+  "field.endHour": "End hour",
   "filter.provider": "Provider",
   "filter.all": "All",
   "metric.totalCost": "API equivalent cost",
@@ -52,6 +54,7 @@
   "metric.outputTokens": "Output tokens",
   "metric.cacheCreate": "Cache create",
   "metric.cacheRead": "Cache read",
+  "metric.cacheRate": "Cache rate",
   "metric.messages": "Messages",
   "metric.costPerMessage": "Cost/msg",
   "metric.tokensPerMessage": "Tokens/msg",
@@ -161,11 +164,13 @@
   "modal.rebuildCacheProceed": "Rebuild",
   "pricing.variesInRange": "Rates changed within this range; showing the rate effective at the range end.",
   "currency.label": "Currency",
-  "currency.rateLabel": "Rate per 1 USD",
   "currency.updatePublic": "Update public rates",
   "currency.updateFailed": "Could not fetch public exchange rates. Check your network and try again.",
   "currency.source.manual": "manual rate",
   "currency.source.public": "public rate",
   "currency.source.default": "default",
-  "currency.missingRate": "No rate for the selected currency yet; showing USD. Update public rates or enter one manually."
+  "currency.missingRate": "No rate for the selected currency yet; showing USD. Update public rates or enter one manually.",
+  "currency.quickLabel": "Quick",
+  "currency.applied": "Display currency switched to {code}",
+  "currency.codePlaceholder": "Currency code (e.g. USD, CNY)"
 }

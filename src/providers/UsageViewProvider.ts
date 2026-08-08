@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
+import { OpenCodeUsageAdapter } from "../adapters/OpenCodeUsageAdapter";
 import { tokenTotal } from "../domain/math";
 import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
@@ -87,6 +88,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         if (
           event.affectsConfiguration("aiCodingUsage.claude.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.codex.usagePath") ||
+          event.affectsConfiguration("aiCodingUsage.opencode.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.autoDetectLocalSources")
         ) {
           this.resetSourceState();
@@ -428,23 +430,15 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   private usageSources(config: vscode.WorkspaceConfiguration) {
-    const sourcePaths = this.configuredUsagePaths(config);
-    const claudePath = sourcePaths.find((source) => source.provider === "claude");
-    const codexPath = sourcePaths.find((source) => source.provider === "codex");
-    return [
-      {
-        provider: "claude" as const,
-        sourcePath: claudePath?.sourcePath ?? "",
-        adapter: new ClaudeUsageAdapter(claudePath?.sourcePath),
-        issue: claudePath?.issue,
-      },
-      {
-        provider: "codex" as const,
-        sourcePath: codexPath?.sourcePath ?? "",
-        adapter: new CodexUsageAdapter(codexPath?.sourcePath),
-        issue: codexPath?.issue,
-      },
-    ];
+    return this.configuredUsagePaths(config).map((source) => {
+      const adapter = usageAdapterForProvider(source.provider, source.sourcePath);
+      return {
+        provider: source.provider,
+        sourcePath: source.sourcePath ?? "",
+        adapter,
+        issue: source.issue,
+      };
+    });
   }
 
   private localePreference(): DashboardLocalePreference {
@@ -728,7 +722,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   private configuredUsagePaths(config: vscode.WorkspaceConfiguration): ConfiguredUsagePath[] {
-    return [this.configuredUsagePath(config, "claude"), this.configuredUsagePath(config, "codex")];
+    return (["claude", "codex", "opencode"] as const).map((provider) => this.configuredUsagePath(config, provider));
   }
 
   private configuredUsagePath(config: vscode.WorkspaceConfiguration, provider: UsageProvider): ConfiguredUsagePath {
@@ -799,7 +793,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       notNow,
     );
     if (selected === chooseFolders) {
-      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex"]);
+      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex", "opencode"]);
       void this.refresh({ allowSourcePrompt: true });
     } else if (selected === openSettings) {
       await vscode.commands.executeCommand("workbench.action.openSettings", "aiCodingUsage");
@@ -859,7 +853,9 @@ function formatCost(cost: UsageCost | undefined, locale: string, translateMessag
 }
 
 function formatRangeDates(range: TimeRange): string {
-  return range.startDate === range.endDate ? range.startDate : `${range.startDate} - ${range.endDate}`;
+  const start = range.startHour ? `${range.startDate} ${range.startHour}:00` : range.startDate;
+  const end = range.endHour ? `${range.endDate} ${range.endHour}:00` : range.endDate;
+  return start === end ? start : `${start} - ${end}`;
 }
 
 function formatDateTime(date: Date, locale: string, timeZone: string): string {
@@ -909,4 +905,16 @@ function requestIdFrom(message: unknown): string {
     }
   }
   return "unknown";
+}
+
+function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): ClaudeUsageAdapter | CodexUsageAdapter | OpenCodeUsageAdapter {
+  switch (provider) {
+    case "codex":
+      return new CodexUsageAdapter(sourcePath);
+    case "opencode":
+      return new OpenCodeUsageAdapter(sourcePath);
+    case "claude":
+    default:
+      return new ClaudeUsageAdapter(sourcePath);
+  }
 }

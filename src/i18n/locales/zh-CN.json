@@ -40,6 +40,8 @@
   "filter.timeRange": "时间范围",
   "field.startDate": "开始日期",
   "field.endDate": "结束日期",
+  "field.startHour": "开始小时",
+  "field.endHour": "结束小时",
   "filter.provider": "服务来源",
   "filter.all": "全部",
   "metric.totalCost": "API 等效成本",
@@ -52,6 +54,7 @@
   "metric.outputTokens": "输出 Token",
   "metric.cacheCreate": "缓存建立",
   "metric.cacheRead": "缓存读取",
+  "metric.cacheRate": "缓存率",
   "metric.messages": "消息数",
   "metric.costPerMessage": "每消息成本",
   "metric.tokensPerMessage": "每消息 Token",
@@ -161,11 +164,13 @@
   "modal.rebuildCacheProceed": "重建",
   "pricing.variesInRange": "此区间内费率曾调整；显示区间结束时生效的费率。",
   "currency.label": "货币",
-  "currency.rateLabel": "每 1 USD 汇率",
   "currency.updatePublic": "更新公开汇率",
   "currency.updateFailed": "无法获取公开汇率，请确认网络后重试。",
   "currency.source.manual": "手动汇率",
   "currency.source.public": "公开汇率",
   "currency.source.default": "默认",
-  "currency.missingRate": "所选货币尚无汇率，先以 USD 显示；请更新公开汇率或手动输入。"
+  "currency.missingRate": "所选货币尚无汇率，先以 USD 显示；请更新公开汇率或手动输入。",
+  "currency.quickLabel": "常用",
+  "currency.applied": "显示币种已切换为 {code}",
+  "currency.codePlaceholder": "币种代码（如 USD、CNY）"
 }

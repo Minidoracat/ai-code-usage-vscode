@@ -40,6 +40,8 @@
   "filter.timeRange": "時間範圍",
   "field.startDate": "開始日期",
   "field.endDate": "結束日期",
+  "field.startHour": "開始小時",
+  "field.endHour": "結束小時",
   "filter.provider": "服務來源",
   "filter.all": "全部",
   "metric.totalCost": "API 等效成本",
@@ -52,6 +54,7 @@
   "metric.outputTokens": "輸出 Token",
   "metric.cacheCreate": "快取建立",
   "metric.cacheRead": "快取讀取",
+  "metric.cacheRate": "快取率",
   "metric.messages": "訊息數",
   "metric.costPerMessage": "每訊息成本",
   "metric.tokensPerMessage": "每訊息 Token",
@@ -161,11 +164,13 @@
   "modal.rebuildCacheProceed": "重建",
   "pricing.variesInRange": "此區間內費率曾調整；顯示區間結束時生效的費率。",
   "currency.label": "貨幣",
-  "currency.rateLabel": "每 1 USD 匯率",
   "currency.updatePublic": "更新公開匯率",
   "currency.updateFailed": "無法取得公開匯率，請確認網路後再試。",
   "currency.source.manual": "手動匯率",
   "currency.source.public": "公開匯率",
   "currency.source.default": "預設",
-  "currency.missingRate": "所選貨幣尚無匯率，先以 USD 顯示；請更新公開匯率或手動輸入。"
+  "currency.missingRate": "所選貨幣尚無匯率，先以 USD 顯示；請更新公開匯率或手動輸入。",
+  "currency.quickLabel": "常用",
+  "currency.applied": "顯示幣種已切換為 {code}",
+  "currency.codePlaceholder": "幣種代碼（如 USD、CNY）"
 }

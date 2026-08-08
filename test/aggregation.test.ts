@@ -116,7 +116,7 @@ test("trend buckets use selected time zone date keys", () => {
   ], range);
 
   assert.equal(summary.totals.records, 1);
-  assert.equal(summary.trend[0]?.bucket, "2026-05-01");
+  assert.equal(summary.trend[0]?.bucket, "2026-05-01T01"); // today is hourly now
 });
 
 test("empty input returns zero totals", () => {
@@ -125,7 +125,7 @@ test("empty input returns zero totals", () => {
 
   assert.equal(summary.totals.records, 0);
   assert.equal(summary.totals.sessions, 0);
-  assert.equal(summary.providerSplit.length, 2);
+  assert.equal(summary.providerSplit.length, 3);
 });
 
 test("provider filter limits totals to selected provider", () => {
