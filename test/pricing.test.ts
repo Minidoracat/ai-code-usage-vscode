@@ -57,6 +57,27 @@ test("current catalog prices Claude Opus 4.8 by id and display name", async () =
   }
 });
 
+test("current catalog prices Claude Opus 5 aliases and cache categories", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const tokens = {
+    input: 1_000_000,
+    output: 1_000_000,
+    cacheWrite5m: 1_000_000,
+    cacheWrite1h: 1_000_000,
+    cacheRead: 1_000_000,
+  };
+  const estimates = ["claude-opus-5", "Claude Opus 5", "claude-opus-5[1m]"].map((model) =>
+    pricing.estimate(record("claude", model, tokens)),
+  );
+
+  for (const estimate of estimates) {
+    assert.equal(estimate.available, true);
+    if (estimate.available) {
+      assert.equal(estimate.cost.amount, 46.75);
+    }
+  }
+});
+
 test("current catalog prices Claude Fable 5 by id and display name", async () => {
   const pricing = new PricingService(await srcCatalog());
   const byId = pricing.estimate(record("claude", "claude-fable-5", { input: 1_000_000, output: 1_000_000 }));
