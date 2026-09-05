@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Display currency switches as soon as a valid code is entered; the manual rate input is gone and `setCurrency` no longer touches `aiCodingUsage.exchangeRates` (set rates there or refresh public rates).
 - Hour buckets carry their UTC offset (`YYYY-MM-DDTHH±hh:mm`), so repeated local hours on DST fall-back days stay separate.
 - JSONL sources that change during import are retried once and then skipped for that refresh instead of importing a partial snapshot.
+- A usage file that cannot be read (permissions, I/O) is reported as `file_unreadable` and keeps its previously cached records; the cache retries it on the next refresh even when size and mtime are unchanged.
 
 ## 0.1.6 - 2026-07-10
 

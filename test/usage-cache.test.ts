@@ -150,6 +150,37 @@ test("cached importer reparses changed files and keeps warm diagnostics", async 
   }
 });
 
+test("cached importer keeps records when a file becomes unreadable and retries it once readable again", async () => {
+  const fixture = await createFixture();
+  try {
+    const usageFile = path.join(fixture.sourceRoot, "session.jsonl");
+    await writeClaudeUsage(usageFile, { sessionId: "s", timestamp: "2026-05-01T01:00:00.000Z", inputTokens: 7, outputTokens: 1 });
+    const adapter = new FlakyClaudeAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    const load = () => importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range });
+
+    const warm = await load();
+    // The file is rewritten (new mtime) but the read fails this time.
+    await utimes(usageFile, new Date("2026-05-02T00:00:00.000Z"), new Date("2026-05-02T00:00:00.000Z"));
+    adapter.failReads = true;
+    const failed = await load();
+    adapter.failReads = false;
+    const recovered = await load();
+
+    assert.equal(warm.imports[0]?.records[0]?.tokens.input, 7);
+    // Unreadable: error surfaced, cached records retained.
+    assert.ok(failed.imports[0]?.errors.some((error) => error.code === "file_unreadable"));
+    assert.equal(failed.imports[0]?.records[0]?.tokens.input, 7);
+    // Same size/mtime, but a cached read failure must be retried and cleared.
+    assert.equal(recovered.imports[0]?.errors.length, 0);
+    assert.equal(recovered.imports[0]?.records[0]?.tokens.input, 7);
+    assert.equal(adapter.parseCount, 3);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test("cached importer reuses unchanged files with cached diagnostics and no records", async () => {
   const fixture = await createFixture();
   try {
@@ -685,6 +716,25 @@ class CountingClaudeAdapter extends ClaudeUsageAdapter {
   public override async importUsageFile(filePath: string, readAt?: string) {
     this.parseCount += 1;
     return super.importUsageFile(filePath, readAt);
+  }
+}
+
+/** Simulates a file that cannot be opened (EACCES/EIO) without touching its size or mtime. */
+class FlakyClaudeAdapter extends CountingClaudeAdapter {
+  public failReads = false;
+
+  public override async importUsageFile(filePath: string, readAt?: string) {
+    if (!this.failReads) {
+      return super.importUsageFile(filePath, readAt);
+    }
+    this.parseCount += 1;
+    return {
+      provider: "claude" as const,
+      records: [],
+      warnings: [],
+      errors: [{ severity: "error" as const, code: "file_unreadable", message: "EACCES: permission denied", sourcePath: filePath, provider: "claude" as const }],
+      sourceMeta: [],
+    };
   }
 }
 

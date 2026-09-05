@@ -201,16 +201,18 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
 
     // Whole-file JSON is the easiest target for read-during-write tearing
-    // (truncated exports, half-written files). Read with a stability check:
-    // if the file fingerprint changes between the pre-read stat and the
-    // post-read stat, wait briefly and retry once; only report a hard error
-    // when the file is stable and genuinely malformed.
-    const outcome = await this.readTextStable(filePath);
-    if (!outcome.ok) {
+    // (truncated exports, half-written files), so read with a stability check.
+    let content: string | undefined;
+    try {
+      content = await this.readStable(filePath, () => fs.readFile(filePath, "utf8"));
+    } catch (error) {
+      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+      return;
+    }
+    if (content === undefined) {
       result.warnings.push(issue("warning", "file_transient", "Usage file changed while reading; skipped for this refresh (will retry on next refresh).", filePath, this.provider));
       return;
     }
-    const content = outcome.content;
 
     if (content.trim().length === 0) {
       result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
@@ -221,34 +223,25 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   }
 
   /**
-   * Reads a small text file with a before/after stat stability check and one
-   * retry after a short delay. Returns { ok: true, content } when stable,
-   * or { ok: false } when the file is still being written between attempts.
+   * Runs `attempt` with a before/after stat fingerprint check, retrying once
+   * after a short delay. Returns undefined when the file was still changing on
+   * both attempts. Read failures propagate to the caller unchanged, so a
+   * permission error is reported as unreadable rather than transient.
    */
-/** Reads a text file with a before/after stat stability check and one retry. */
-  private async readTextStable(filePath: string): Promise<{ ok: true; content: string } | { ok: false }> {
-    const readOnce = async () => {
-      const before = await statOrUndefined(filePath);
-      let content: string | undefined;
-      try {
-        content = await fs.readFile(filePath, "utf8");
-      } catch {
-        return { before, after: undefined, content: undefined };
+  private async readStable<T>(filePath: string, attempt: () => Promise<T>): Promise<T | undefined> {
+    for (let tries = 0; tries < 2; tries += 1) {
+      if (tries > 0) {
+        // Give the writer a moment to finish before retrying.
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
+      const before = await statOrUndefined(filePath);
+      const value = await attempt();
       const after = await statOrUndefined(filePath);
-      return { before, after, content };
-    };
-
-    const first = await readOnce();
-    if (statStable(first.before, first.after)) {
-      return { ok: true, content: first.content as string };
+      if (statStable(before, after)) {
+        return value;
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const second = await readOnce();
-    if (statStable(second.before, second.after)) {
-      return { ok: true, content: second.content as string };
-    }
-    return { ok: false };
+    return undefined;
   }
 
   private readJson(content: string, filePath: string, meta: SourceMeta, result: AdapterImportResult): void {
@@ -297,24 +290,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     };
 
     let out: Attempt | undefined;
-    for (let tries = 0; tries < 2; tries += 1) {
-      if (tries > 0) {
-        // Give the writer a moment to finish the record before retrying.
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      const before = await statOrUndefined(filePath);
-      let candidate: Attempt;
-      try {
-        candidate = await attempt();
-      } catch (error) {
-        result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
-        return;
-      }
-      const after = await statOrUndefined(filePath);
-      if (statStable(before, after)) {
-        out = candidate;
-        break;
-      }
+    try {
+      out = await this.readStable(filePath, attempt);
+    } catch (error) {
+      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+      return;
     }
     if (!out) {
       // Still being written: treat as transient and skip both records and
