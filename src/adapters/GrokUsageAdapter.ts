@@ -37,6 +37,10 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     try {
       rows = await this.readStable(filePath, attempt);
     } catch (error) {
+      if (error instanceof WalModeError) {
+        result.warnings.push(issue("warning", "wal_unsupported", error.message, filePath));
+        return;
+      }
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
       return;
     }
@@ -104,27 +108,40 @@ const sessionEventColumns: Array<keyof SessionEventRow> = [
 ];
 
 /**
- * A hot rollback journal (or WAL) beside the database means a writer is
+ * A hot rollback journal beside the database means a writer is
  * mid-transaction: the main file may hold spilled, uncommitted pages that
- * look stable to a size/mtime check. sqlite readers refuse such a file;
- * so do we, by failing the attempt so readStable retries and then skips.
+ * look stable to a size/mtime check. sqlite readers refuse such a file; so do
+ * we, by failing the attempt so readStable retries and then skips. A `-wal`
+ * file is different: it persists while idle and holds committed pages the
+ * main file lacks, so it is reported once as unsupported rather than retried.
  */
 async function assertNoActiveJournal(filePath: string): Promise<void> {
-  for (const suffix of ["-journal", "-wal"]) {
-    try {
-      await fs.access(filePath + suffix);
-      throw new JournalActiveError(suffix);
-    } catch (error) {
-      if (error instanceof JournalActiveError) {
-        throw error;
-      }
-    }
+  if (await exists(`${filePath}-wal`)) {
+    throw new WalModeError();
+  }
+  if (await exists(`${filePath}-journal`)) {
+    throw new JournalActiveError();
+  }
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
 class JournalActiveError extends Error {
-  public constructor(suffix: string) {
-    super(`SQLite ${suffix} present: database is being written`);
+  public constructor() {
+    super("SQLite rollback journal present: database is being written");
+  }
+}
+
+class WalModeError extends Error {
+  public constructor() {
+    super("SQLite database uses WAL mode; committed rows may be missing from the main file until grok-cli checkpoints it");
   }
 }
 

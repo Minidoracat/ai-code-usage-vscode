@@ -118,3 +118,20 @@ test("grok adapter skips the refresh while a writer holds an open transaction an
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("grok adapter reports a WAL-mode database instead of retrying it forever", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const dbPath = path.join(dir, "session.db");
+    await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
+    await writeFile(`${dbPath}-wal`, Buffer.alloc(32));
+
+    const result = await new GrokUsageAdapter(dbPath).importUsage();
+
+    assert.equal(result.records.length, 0);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.warnings.map((warning) => warning.code), ["wal_unsupported"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
