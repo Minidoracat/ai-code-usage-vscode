@@ -40,15 +40,17 @@ test("source detection ignores POSIX home roots on Windows", () => {
 });
 
 test("pi candidates prefer PI_CODING_AGENT_DIR, then omp, pi CLI, and vscode-pi storage, without duplicates", () => {
-  const env = { HOME: "/home/u", PI_CODING_AGENT_DIR: "/home/u/.omp/agent" };
-  const pi = usageSourceCandidates("/home/u", env, "linux", "/home/u/.config/Code/User/globalStorage")
+  const home = path.join(tmpdir(), "u");
+  const storage = path.join(home, "globalStorage");
+  const env = { HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent") };
+  const pi = usageSourceCandidates(home, env, process.platform, storage)
     .filter((source) => source.provider === "pi")
     .map((source) => source.sourcePath);
 
   assert.deepEqual(pi, [
-    "/home/u/.omp/agent/sessions",
-    "/home/u/.pi/agent/sessions",
-    "/home/u/.config/Code/User/globalStorage/cdervis.vscode-pi/bundled-pi-agent/sessions",
+    path.join(home, ".omp", "agent", "sessions"),
+    path.join(home, ".pi", "agent", "sessions"),
+    path.join(storage, "cdervis.vscode-pi", "bundled-pi-agent", "sessions"),
   ]);
 });
 
