@@ -11,6 +11,7 @@ import type {
   UsageSession,
   UsageSummary,
 } from "../domain/types";
+import { supportedProviders } from "../domain/types";
 import { estimateRecordCost, PricingService } from "./PricingService";
 import { makeZonedDayBucketer, makeZonedHourBucketer } from "./TimeZoneService";
 
@@ -79,7 +80,7 @@ export class UsageAggregator {
   }
 
   private buildProviderSplit(records: UsageRecord[]): UsageSummary["providerSplit"] {
-    const providers: UsageProvider[] = ["claude", "codex", "pi"];
+    const providers: readonly UsageProvider[] = supportedProviders;
     return providers.map((provider) => {
       const providerRecords = records.filter((record) => record.provider === provider);
       return {

@@ -14,6 +14,7 @@ import type {
   UsageProviderFilter,
   UsageSummary,
 } from "../src/domain/types";
+import { supportedProviders } from "../src/domain/types";
 import { convertPricingCatalog, convertSummaryCurrency, defaultDisplayCurrency } from "../src/domain/currency";
 import { timeRangeKinds } from "../src/domain/timeRange";
 import { findPricingRule } from "../src/services/PricingService";
@@ -43,7 +44,7 @@ const pendingWatchdogMs = 45_000;
 const loadingActivityWindowMs = 3_000;
 const minimumCustomDate = "2000-01-01";
 const ranges: readonly TimeRangeKind[] = timeRangeKinds;
-const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex", "pi"];
+const providerFilters: UsageProviderFilter[] = ["all", ...supportedProviders];
 const localePreferences: DashboardLocalePreference[] = ["auto", "en", "zh-TW", "zh-CN", "ja", "ko"];
 const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
 const chartMetrics = ["cost", "input", "output", "cacheWrite", "cacheRead", "records"] as const;
@@ -1914,6 +1915,7 @@ type ReportPalette = {
   claude: string;
   codex: string;
   pi: string;
+  grok: string;
 };
 
 type ReportCanvas = {
@@ -2016,6 +2018,7 @@ function reportPalette(): ReportPalette {
     claude: canvasColor("--provider-claude", "#d97757"),
     codex: canvasColor("--provider-codex", "#10a37f"),
     pi: canvasColor("--provider-pi", "#3b82f6"),
+    grok: canvasColor("--provider-grok", "#a855f7"),
   };
 }
 
@@ -2609,6 +2612,9 @@ function providerColor(provider: UsageProviderFilter): string {
   }
   if (provider === "pi") {
     return getCssColor("--provider-pi", "#3b82f6");
+  }
+  if (provider === "grok") {
+    return getCssColor("--provider-grok", "#a855f7");
   }
   return getCssColor("--vscode-charts-blue", "#3794ff");
 }

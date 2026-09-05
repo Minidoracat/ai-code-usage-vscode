@@ -110,6 +110,11 @@
           "default": "",
           "markdownDescription": "%configuration.piUsagePath.description%"
         },
+        "aiCodingUsage.grok.usagePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%configuration.grokUsagePath.description%"
+        },
         "aiCodingUsage.defaultRange": {
           "type": "string",
           "default": "thisWeek",
@@ -196,7 +201,7 @@
     "vscode:prepublish": "npm run compile",
     "clean": "node scripts/clean-out.mjs",
     "build:webview": "esbuild webview-src/app.tsx --bundle --format=iife --platform=browser --target=es2020 --jsx=automatic --jsx-import-source=preact --outfile=media/main.js",
-    "compile": "npm run clean && npm run build:webview && tsc -p ./",
+    "compile": "npm run clean && npm run build:webview && npm run build:sqljs && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run check:test-data && npm run compile && node --test out/test/**/*.test.js",
     "check:i18n": "node scripts/check-i18n.mjs",
@@ -209,15 +214,20 @@
     "inspect:vsix": "node scripts/inspect-vsix.mjs",
     "package:vsix": "npm run compile && npm run check:i18n && npm run check:privacy && npm run check:pricing && npm run check:test-data && npx @vscode/vsce package --no-dependencies",
     "release:gate": "npm test && npm run check:i18n && npm run check:privacy && npm run check:pricing && npm run check:test-data && npm run check:audit && npm run check:audit:runtime && npm run package:vsix && npm run inspect:vsix",
-    "deploy": "npx @vscode/vsce publish --no-dependencies"
+    "deploy": "npx @vscode/vsce publish --no-dependencies",
+    "build:sqljs": "node scripts/copy-sqljs.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/sql.js": "^1.4.11",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.6.4",
     "esbuild": "^0.28.0",
     "preact": "^10.29.1",
     "typescript": "^5.9.0",
     "uplot": "^1.6.32"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.2"
   }
 }

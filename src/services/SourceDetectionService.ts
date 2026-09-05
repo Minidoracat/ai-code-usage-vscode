@@ -71,6 +71,7 @@ export function usageSourceCandidates(
     ...(globalStorageRoot
       ? [{ provider: "pi" as const, sourcePath: pathApi.join(globalStorageRoot, "cdervis.vscode-pi", "bundled-pi-agent", "sessions") }]
       : []),
+    ...homeRoots.map((homeRoot) => ({ provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok-cli", "session.db") })),
   ];
   const seen = new Set<string>();
   return candidates.filter((candidate) => !seen.has(candidate.sourcePath) && seen.add(candidate.sourcePath));
@@ -101,7 +102,7 @@ async function countUsageFiles(sourcePath: string, depth: number): Promise<numbe
   try {
     const stat = await fs.stat(sourcePath);
     if (stat.isFile()) {
-      return /\.(json|jsonl)$/i.test(sourcePath) ? 1 : 0;
+      return /\.(json|jsonl|db|sqlite)$/i.test(sourcePath) ? 1 : 0;
     }
     if (!stat.isDirectory()) {
       return 0;

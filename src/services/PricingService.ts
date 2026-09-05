@@ -168,6 +168,9 @@ function pricingProviderFor(rules: PricingRule[], provider: UsageRecord["provide
   if (/^(gpt|o\d)/.test(normalizedModel)) {
     return "codex";
   }
+  if (normalizedModel.startsWith("grok")) {
+    return "grok";
+  }
   return provider;
 }
 

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import { messagesFor, normalizeLocale } from "../i18n/messages";
+import { supportedProviders } from "../domain/types";
 import { isNativeUsagePath, usageSourceCandidates } from "../services/SourceDetectionService";
 import { TimeRangeService } from "../services/TimeRangeService";
 import { defaultTimeZoneMode, isTimeZoneMode, isValidTimeZone, resolveTimeZone } from "../services/TimeZoneService";
@@ -38,7 +39,7 @@ function createInitialLoadingState(): DashboardLoadingState {
   const localePreference = localePreferenceFromConfig(config);
   const locale = normalizeLocale(localePreference === "auto" ? vscode.env.language : localePreference);
   const candidates = usageSourceCandidates();
-  const sources = (["claude", "codex", "pi"] as const).map((provider) => {
+  const sources = supportedProviders.map((provider) => {
     const configuredPath = config.get<string>(`${provider}.usagePath`, "").trim();
     if (configuredPath && !isNativeUsagePath(configuredPath)) {
       return { provider, status: "invalid" as const, path: configuredPath };

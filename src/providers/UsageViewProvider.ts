@@ -2,6 +2,8 @@ import path from "node:path";
 import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
+import { GrokUsageAdapter } from "../adapters/GrokUsageAdapter";
+import type { JsonUsageAdapter } from "../adapters/JsonUsageAdapter";
 import { PiUsageAdapter } from "../adapters/PiUsageAdapter";
 import { tokenTotal } from "../domain/math";
 import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
@@ -19,6 +21,7 @@ import type {
   UsageProviderFilter,
   UsageSummary,
 } from "../domain/types";
+import { supportedProviders } from "../domain/types";
 import { type MessageKey, messagesFor, normalizeLocale, translate } from "../i18n/messages";
 import pricingCatalog from "../pricing/catalog.json";
 import { PricingService } from "../services/PricingService";
@@ -90,6 +93,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
           event.affectsConfiguration("aiCodingUsage.claude.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.codex.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.pi.usagePath") ||
+          event.affectsConfiguration("aiCodingUsage.grok.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.autoDetectLocalSources")
         ) {
           this.resetSourceState();
@@ -717,7 +721,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   private configuredUsagePaths(config: vscode.WorkspaceConfiguration): ConfiguredUsagePath[] {
-    return (["claude", "codex", "pi"] as const).map((provider) => this.configuredUsagePath(config, provider));
+    return supportedProviders.map((provider) => this.configuredUsagePath(config, provider));
   }
 
   private configuredUsagePath(config: vscode.WorkspaceConfiguration, provider: UsageProvider): ConfiguredUsagePath {
@@ -788,7 +792,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       notNow,
     );
     if (selected === chooseFolders) {
-      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex", "pi"]);
+      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), [...supportedProviders]);
       void this.refresh({ allowSourcePrompt: true });
     } else if (selected === openSettings) {
       await vscode.commands.executeCommand("workbench.action.openSettings", "aiCodingUsage");
@@ -902,13 +906,15 @@ function requestIdFrom(message: unknown): string {
   return "unknown";
 }
 
-/** Builds the adapter matching a provider (claude/codex/pi). */
-function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): ClaudeUsageAdapter | CodexUsageAdapter | PiUsageAdapter {
+/** Builds the adapter matching a provider. */
+function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): JsonUsageAdapter {
   switch (provider) {
     case "codex":
       return new CodexUsageAdapter(sourcePath);
     case "pi":
       return new PiUsageAdapter(sourcePath);
+    case "grok":
+      return new GrokUsageAdapter(sourcePath);
     case "claude":
     default:
       return new ClaudeUsageAdapter(sourcePath);

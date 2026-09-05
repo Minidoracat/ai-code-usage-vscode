@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import type { AdapterImportResult, PricingCatalog, UsageRecord } from "../src/domain/types";
+import { supportedProviders } from "../src/domain/types";
 import { PricingService } from "../src/services/PricingService";
 import { UsageAggregator } from "../src/services/UsageAggregator";
 import { TimeRangeService } from "../src/services/TimeRangeService";
@@ -125,7 +126,7 @@ test("empty input returns zero totals", () => {
 
   assert.equal(summary.totals.records, 0);
   assert.equal(summary.totals.sessions, 0);
-  assert.equal(summary.providerSplit.length, 3);
+  assert.equal(summary.providerSplit.length, supportedProviders.length);
 });
 
 test("provider filter limits totals to selected provider", () => {

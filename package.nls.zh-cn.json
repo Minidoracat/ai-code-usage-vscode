@@ -20,5 +20,6 @@
   "configuration.exchangeRates.description": "手动汇率（每 1 USD 可兑换的目标货币数量），例如 `{\"TWD\": 32.5, \"JPY\": 155}`。手动汇率优先于仪表板「更新公开汇率」获取的公开汇率；不会自动联网获取。",
   "configuration.screenshotIncludePricing.description": "复制整页截图时包含计价规则面板。",
   "configuration.screenshotIncludeSessions.description": "复制整页截图时包含会话表格。",
-  "configuration.piUsagePath.description": "pi coding agent 会话转录（omp、pi CLI、vscode-pi）的本地 path。留空时会自动套用检测到的本地来源。"
+  "configuration.piUsagePath.description": "pi coding agent 会话转录（omp、pi CLI、vscode-pi）的本地 path。留空时会自动套用检测到的本地来源。",
+  "configuration.grokUsagePath.description": "grok-cli 会话数据库（`~/.grok-cli/session.db`）的本地 path。留空时会自动套用检测到的本地来源。"
 }

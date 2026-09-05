@@ -33,3 +33,4 @@ pnpm-debug.log*
 .vsce
 .vscode-test/
 .DS_Store
+media/sqljs/

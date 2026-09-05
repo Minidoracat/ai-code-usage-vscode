@@ -20,5 +20,6 @@
   "configuration.exchangeRates.description": "手動為替レート（1 USD あたりの対象通貨量）。例: `{\"TWD\": 32.5, \"JPY\": 155}`。手動レートはダッシュボードの「公開レートを更新」で取得した公開レートより優先されます。自動取得は行いません。",
   "configuration.screenshotIncludePricing.description": "ページ全体のスクリーンショットコピーに料金ルールパネルを含めます。",
   "configuration.screenshotIncludeSessions.description": "ページ全体のスクリーンショットコピーにセッションテーブルを含めます。",
-  "configuration.piUsagePath.description": "pi coding agent のセッション転写（omp / pi CLI / vscode-pi）のローカル path。空の場合は検出したローカルソースを自動的に適用します。"
+  "configuration.piUsagePath.description": "pi coding agent のセッション転写（omp / pi CLI / vscode-pi）のローカル path。空の場合は検出したローカルソースを自動的に適用します。",
+  "configuration.grokUsagePath.description": "grok-cli のセッションデータベース（`~/.grok-cli/session.db`）のローカル path。空の場合は検出したローカルソースを自動的に適用します。"
 }
