@@ -207,12 +207,12 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setProvider" && isObject(value["payload"])) {
     const provider = value["payload"]["provider"];
-    if (typeof provider === "string" && (provider === "all" || (supportedProviders as readonly string[]).includes(provider))) {
+    if (isUsageProviderFilter(provider)) {
       return {
         requestId: value["requestId"],
         type: "setProvider",
         version: webviewProtocolVersion,
-        payload: { provider: provider as UsageProviderFilter },
+        payload: { provider },
       };
     }
   }
@@ -276,6 +276,10 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
 
 function isLocalePreference(value: unknown): value is DashboardLocalePreference {
   return value === "auto" || value === "en" || value === "zh-TW" || value === "zh-CN" || value === "ja" || value === "ko";
+}
+
+function isUsageProviderFilter(value: unknown): value is UsageProviderFilter {
+  return value === "all" || (supportedProviders as readonly unknown[]).includes(value);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

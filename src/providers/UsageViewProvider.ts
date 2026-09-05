@@ -802,7 +802,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private async chooseUsageFolders(config: vscode.WorkspaceConfiguration, providers: UsageProvider[]): Promise<void> {
     for (const provider of providers) {
       const selected = await vscode.window.showOpenDialog({
-        canSelectFiles: false,
+        canSelectFiles: provider === "grok",
         canSelectFolders: true,
         canSelectMany: false,
         openLabel: this.t("modal.useFolder"),

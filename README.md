@@ -4,7 +4,7 @@
 
 # AI Coding Usage
 
-**Track local Claude Code and Codex usage from VS Code.**
+**Track local Claude Code, Codex, pi agent, and grok-cli usage from VS Code.**
 
 [![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version-short/minidoracat.ai-code-usage.svg?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
 [![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/minidoracat.ai-code-usage.svg?label=Installs)](https://marketplace.visualstudio.com/items?itemName=minidoracat.ai-code-usage)
@@ -15,12 +15,12 @@
 
 </div>
 
-`AI Coding Usage` is a local-first VS Code extension for reviewing AI coding usage, token volume, sessions, and API-equivalent cost estimates. It reads local usage files from Claude Code and Codex, aggregates them by provider/model/session/date range, and presents the result in a VS Code dashboard and status bar summary.
+`AI Coding Usage` is a local-first VS Code extension for reviewing AI coding usage, token volume, sessions, and API-equivalent cost estimates. It reads local usage files from Claude Code, Codex, pi coding agents (omp, pi CLI, vscode-pi), and grok-cli, aggregates them by provider/model/session/date range, and presents the result in a VS Code dashboard and status bar summary.
 
 ## Features
 
-- Local Claude Code and Codex usage discovery
-- Provider filters for Claude, Codex, or both
+- Local usage discovery for Claude Code, Codex, pi agents, and grok-cli
+- Provider filters for each provider or all combined
 - Calendar quick ranges for today, yesterday, this week, last week, this month, last month, and custom dates; week ranges start on Monday and all boundaries use the selected time zone
 - Time zone selection: system time zone, UTC, or custom IANA time zone
 - Model and session breakdowns with input tokens, output tokens, cache creation, cache reads, and message counts
@@ -40,10 +40,10 @@ Useful commands:
 
 - `Open AI Coding Usage`: open the dashboard in the editor area.
 - `Refresh Usage`: rescan local usage files and refresh the dashboard.
-- `Detect Local AI Usage Sources`: detect local Claude Code and Codex usage paths.
+- `Detect Local AI Usage Sources`: detect local Claude Code, Codex, pi, and grok-cli usage paths.
 - `Open AI Coding Usage Settings`: configure usage paths, language, time zone, auto refresh, display currency, and screenshot content.
 
-On first launch, leave the usage path settings empty to let the extension detect common local paths. You can also open settings and fill `aiCodingUsage.claude.usagePath` or `aiCodingUsage.codex.usagePath` manually.
+On first launch, leave the usage path settings empty to let the extension detect common local paths. You can also open settings and fill `aiCodingUsage.claude.usagePath`, `aiCodingUsage.codex.usagePath`, `aiCodingUsage.pi.usagePath`, or `aiCodingUsage.grok.usagePath` manually.
 
 ## Privacy
 
@@ -65,6 +65,8 @@ If these settings are empty, the extension detects common local paths and applie
 | --- | --- |
 | Claude Code | `~/.claude/projects` |
 | Codex | `~/.codex/sessions` |
+| pi agent | `$PI_CODING_AGENT_DIR/sessions`, `~/.omp/agent/sessions`, `~/.pi/agent/sessions`, or the vscode-pi extension storage |
+| grok-cli | `~/.grok-cli/session.db` (or the `~/.grok-cli` folder) |
 
 On native Windows VS Code, `~` resolves to the current Windows user home, such as `C:\Users\<user>\.claude\projects` and `C:\Users\<user>\.codex\sessions`.
 

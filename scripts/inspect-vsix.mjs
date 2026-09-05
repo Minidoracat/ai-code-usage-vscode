@@ -49,6 +49,7 @@ const requiredGroups = [
   ["extension/media/main.css"],
   ["extension/media/sqljs/sql-wasm.js"],
   ["extension/media/sqljs/sql-wasm.wasm"],
+  ["extension/media/sqljs/LICENSE"],
   ["extension/resources/icon.png"],
 ];
 

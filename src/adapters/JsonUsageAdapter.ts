@@ -622,7 +622,7 @@ function numberField(object: Record<string, unknown>, key: string): number | und
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function normalizeIso(value: string | undefined): string | undefined {
+export function normalizeIso(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }

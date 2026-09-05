@@ -10,3 +10,5 @@ await mkdir("media/sqljs", { recursive: true });
 for (const name of ["sql-wasm.js", "sql-wasm.wasm"]) {
   await copyFile(path.join(dist, name), path.join("media/sqljs", name));
 }
+// MIT requires the notice to travel with redistributed copies.
+await copyFile(path.join(dist, "..", "LICENSE"), "media/sqljs/LICENSE");

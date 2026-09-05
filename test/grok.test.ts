@@ -161,3 +161,34 @@ test("cached importer keeps grok records while the database is in WAL mode and r
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("grok adapter accepts the grok-cli folder and reads session.db inside it, ignoring auth.json", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    await writeSessionDb(path.join(dir, "session.db"), [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
+    await writeFile(path.join(dir, "auth.json"), JSON.stringify({ access_token: "secret" }));
+
+    const result = await new GrokUsageAdapter(dir).importUsage();
+
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.records.length, 1);
+    assert.equal(result.sourceMeta.every((meta) => !meta.sourcePath.endsWith("auth.json")), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("grok adapter reports a database without the grok-cli schema as unsupported, not as an error", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const dbPath = path.join(dir, "session.db");
+    await writeFile(dbPath, ""); // what detection accepts: any existing *.db
+
+    const result = await new GrokUsageAdapter(dbPath).importUsage();
+
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.warnings.map((warning) => warning.code), ["unsupported_schema"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

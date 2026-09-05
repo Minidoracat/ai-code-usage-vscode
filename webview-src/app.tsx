@@ -950,7 +950,7 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
             <div class="pricing-rate-group">
               <span class="pricing-rate-group-label">
                 {translate("pricing.baseRates")}
-                {rule.longContext ? ` · ≤${formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale)}` : ""}
+                {rule.longContext ? ` · ${formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "base")}` : ""}
               </span>
               <div class="pricing-rate-grid">
                 {pricingRateEntries(rule).map(({ category, rate }) => (
@@ -965,7 +965,7 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
             {rule.longContext ? (
               <div class="pricing-rate-group">
                 <span class="pricing-rate-group-label">
-                  {translate("pricing.longContextRates")} · &gt;{formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale)}
+                  {translate("pricing.longContextRates")} · {formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "long")}
                 </span>
                 <div class="pricing-rate-grid">
                   {pricingRateEntries(rule, rule.longContext.rates).map(({ category, rate }) => (
@@ -1512,8 +1512,9 @@ function formatPricingBadge(rule: PricingRule, locale: string, translate: (key: 
     return [formatLine(rule.rates)];
   }
 
-  const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
-  return [formatLine(rule.rates, `≤${threshold}`), formatLine(rule.longContext.rates, `>${threshold}`)];
+  const base = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "base");
+  const long = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "long");
+  return [formatLine(rule.rates, base), formatLine(rule.longContext.rates, long)];
 }
 
 function pricingRuleTooltip(rule: PricingRule, locale: string, translate: (key: string) => string): string {
@@ -1522,10 +1523,10 @@ function pricingRuleTooltip(rule: PricingRule, locale: string, translate: (key: 
     `${translate("pricing.unit")}: ${rule.currency} · ${translate("pricing.perMillionTokens")}`,
   ];
   if (rule.longContext) {
-    const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
+    const long = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "long");
     lines.push(
-      `${translate("pricing.contextThreshold")}: >${threshold} (${translate("metric.inputTokens")} + ${translate("pricing.cachedInput")})`,
-      `${translate("pricing.baseRates")} · ≤${threshold}`,
+      `${translate("pricing.contextThreshold")}: ${long} (${translate("metric.inputTokens")} + ${translate("pricing.cachedInput")})`,
+      `${translate("pricing.baseRates")} · ${formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "base")}`,
     );
   }
   lines.push(
@@ -1535,9 +1536,8 @@ function pricingRuleTooltip(rule: PricingRule, locale: string, translate: (key: 
     }),
   );
   if (rule.longContext) {
-    const threshold = formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale);
     lines.push(
-      `${translate("pricing.longContextRates")} · >${threshold}`,
+      `${translate("pricing.longContextRates")} · ${formatTokenThreshold(rule.longContext.appliesAboveInputTokens, locale, "long")}`,
       ...pricingRateEntries(rule, rule.longContext.rates).map(({ category, rate }) => {
         const label = translate(pricingRateCategories.find((entry) => entry.category === category)?.labelKey ?? "state.unknown");
         return `${label}: ${formatPricingRate(rate, rule.currency, locale)}`;
@@ -1566,8 +1566,20 @@ function formatRateAmount(rate: number, locale: string): string {
   return cachedNumberFormat(locale, { maximumFractionDigits: rate < 1 ? 4 : 2 }).format(rate);
 }
 
-function formatTokenThreshold(tokens: number, locale: string): string {
-  return tokens % 1_000 === 0 ? `${formatNumber(tokens / 1_000, locale)}K` : formatNumber(tokens, locale);
+/**
+ * Renders a long-context boundary. The rule stores the last base-tier token
+ * count (pricing applies long-context rates strictly above it). Vendors state
+ * the boundary as either "above 272K" (stored 272000) or "from 200K" (stored
+ * 199999); both render as their round number with the matching comparator.
+ */
+function formatTokenThreshold(tokens: number, locale: string, side: "base" | "long"): string {
+  const inclusiveLong = (tokens + 1) % 1_000 === 0;
+  const round = inclusiveLong ? tokens + 1 : tokens;
+  const label = round % 1_000 === 0 ? `${formatNumber(round / 1_000, locale)}K` : formatNumber(round, locale);
+  if (side === "base") {
+    return `${inclusiveLong ? "<" : "\u2264"}${label}`;
+  }
+  return `${inclusiveLong ? "\u2265" : ">"}${label}`;
 }
 
 function formatAliases(aliases: string[], translate: (key: string) => string): string {
@@ -2319,12 +2331,8 @@ function drawReportSessions(report: ReportCanvas, options: ReportRenderOptions, 
     x = report.margin + 14;
     setReportFont(report, 11, 500);
     for (const column of columns) {
-      report.context.fillStyle =
-        column.key === "provider" && values[column.key] === "claude"
-          ? report.palette.claude
-          : column.key === "provider" && values[column.key] === "codex"
-            ? report.palette.codex
-            : report.palette.text;
+      const provider = column.key === "provider" ? values[column.key] : undefined;
+      report.context.fillStyle = (provider && report.palette[provider as UsageProvider]) || report.palette.text;
       drawClippedText(report, values[column.key] ?? "", x, rowY, column.width - 8);
       x += column.width;
     }

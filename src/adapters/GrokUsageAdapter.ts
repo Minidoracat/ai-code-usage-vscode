@@ -2,7 +2,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AdapterImportResult, ImportIssue, SourceMeta, UsageRecord } from "../domain/types";
-import { JsonUsageAdapter, type UsageFileListResult } from "./JsonUsageAdapter";
+import { JsonUsageAdapter, normalizeIso, type UsageFileListResult } from "./JsonUsageAdapter";
 
 /**
  * grok-cli keeps local usage accounting in `~/.grok-cli/session.db` (SQLite,
@@ -17,6 +17,10 @@ import { JsonUsageAdapter, type UsageFileListResult } from "./JsonUsageAdapter";
 export class GrokUsageAdapter extends JsonUsageAdapter {
   public override readonly provider = "grok" as const;
 
+  public constructor(private readonly grokPath?: string) {
+    super(grokPath);
+  }
+
   /**
    * The cache reuses a file while its size/mtime are unchanged, but a
    * `-journal` / `-wal` appearing or disappearing beside the database changes
@@ -24,7 +28,10 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
    * the fingerprint so those transitions trigger a reparse.
    */
   public override async listUsageFiles(options?: { usagePath?: string }): Promise<UsageFileListResult> {
-    const listed = await super.listUsageFiles(options);
+    // The folder picker and settings UI hand us `~/.grok-cli`; the source is
+    // the single `session.db` inside it, not the JSON files the base scanner
+    // would otherwise collect (auth.json is not usage data).
+    const listed = await super.listUsageFiles({ usagePath: await resolveSessionDb(options?.usagePath ?? this.grokPath) });
     for (const file of listed.files) {
       for (const suffix of ["-journal", "-wal"]) {
         try {
@@ -63,6 +70,10 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         result.warnings.push(issue("warning", "wal_unsupported", error.message, filePath));
         return;
       }
+      if (error instanceof SchemaMismatchError) {
+        result.warnings.push(issue("warning", "unsupported_schema", error.message, filePath));
+        return;
+      }
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
       return;
     }
@@ -85,25 +96,45 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         skipped += 1; // image/video/audio events carry no token usage
         continue;
       }
+      const startedAt = normalizeIso(row.started_at);
+      if (!startedAt) {
+        skipped += 1;
+        continue;
+      }
+      const endedAt = normalizeIso(row.completed_at) ?? startedAt;
       result.records.push({
         provider: "grok",
         model: row.model ?? undefined,
         sessionId: row.session_id,
-        startedAt: row.started_at,
-        endedAt: row.completed_at,
-        observedAt: row.completed_at,
+        startedAt,
+        endedAt,
+        observedAt: endedAt,
         tokens,
         source: meta,
         raw: row,
       });
     }
     if (skipped > 0) {
-      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events (image/video/audio) carry no token usage and were skipped.`, filePath));
+      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events carry no token usage or no timestamp (image/video/audio) and were skipped.`, filePath));
     }
   }
 }
 
 export const grokParserVersion = "grok-sqlite-v1";
+
+async function resolveSessionDb(usagePath: string | undefined): Promise<string | undefined> {
+  if (!usagePath) {
+    return usagePath;
+  }
+  try {
+    if ((await fs.stat(usagePath)).isDirectory()) {
+      return path.join(usagePath, "session.db");
+    }
+  } catch {
+    // missing path: let the base implementation report path_unreadable
+  }
+  return usagePath;
+}
 
 type SessionEventRow = {
   event_id: string;
@@ -135,7 +166,8 @@ const sessionEventColumns: Array<keyof SessionEventRow> = [
  * look stable to a size/mtime check. sqlite readers refuse such a file; so do
  * we, by failing the attempt so readStable retries and then skips. A `-wal`
  * file is different: it persists while idle and holds committed pages the
- * main file lacks, so it is reported once as unsupported rather than retried.
+ * main file lacks, so it is reported as unsupported; the cache keeps the last
+ * good records and re-checks on every refresh until the WAL is gone.
  */
 async function assertNoActiveJournal(filePath: string): Promise<void> {
   if (await exists(`${filePath}-wal`)) {
@@ -161,6 +193,12 @@ class JournalActiveError extends Error {
   }
 }
 
+class SchemaMismatchError extends Error {
+  public constructor() {
+    super("Not a grok-cli session database: table session_events with the expected columns was not found");
+  }
+}
+
 class WalModeError extends Error {
   public constructor() {
     super("SQLite database uses WAL mode; committed rows may be missing from the main file until grok-cli checkpoints it");
@@ -173,6 +211,11 @@ async function readSessionEvents(filePath: string): Promise<SessionEventRow[]> {
   await assertNoActiveJournal(filePath);
   const db = new SQL.Database(bytes);
   try {
+    const [schema] = db.exec("select sql from sqlite_master where type = 'table' and name = 'session_events'");
+    const createSql = String(schema?.values[0]?.[0] ?? "");
+    if (!createSql || sessionEventColumns.some((column) => !createSql.includes(column))) {
+      throw new SchemaMismatchError();
+    }
     const [table] = db.exec(`select ${sessionEventColumns.join(", ")} from session_events order by started_at`);
     if (!table) {
       return [];
@@ -204,25 +247,27 @@ type SqlJs = { Database: new (data?: Uint8Array) => { exec(sql: string): Array<{
 let sqlJs: Promise<SqlJs> | undefined;
 
 /**
- * sql.js is vendored into media/sqljs at build time (scripts/copy-sqljs.mjs)
- * because node_modules is not shipped in the VSIX. The vendored copy sits at
- * <extension root>/media/sqljs; walk up from this module to find it so the
- * same code works from out/src/adapters (packaged) and src/adapters (tests).
+ * sql.js is vendored into <extension root>/media/sqljs at build time
+ * (scripts/copy-sqljs.mjs) because node_modules is not shipped in the VSIX.
+ * This module lives at <root>/out/src/adapters (packaged) or <root>/src/adapters
+ * (tests); only those two fixed depths are probed so the lookup can never load
+ * code from outside the extension directory.
  */
 function loadSqlJs(): Promise<SqlJs> {
   if (!sqlJs) {
-    const require = createRequire(__filename);
-    let dir = __dirname;
-    for (let depth = 0; depth < 5; depth += 1) {
-      const candidate = path.join(dir, "media", "sqljs");
-      if (existsSync(path.join(candidate, "sql-wasm.js"))) {
-        const init = require(path.join(candidate, "sql-wasm.js")) as (config: { locateFile: (file: string) => string }) => Promise<SqlJs>;
-        sqlJs = init({ locateFile: (file) => path.join(candidate, file) });
-        return sqlJs;
-      }
-      dir = path.dirname(dir);
+    // out/src/adapters -> root is 3 up; src/adapters (tsx in tests) -> 2 up.
+    const dir = [3, 2]
+      .map((levels) => path.resolve(__dirname, ...Array<string>(levels).fill(".."), "media", "sqljs"))
+      .find((candidate) => existsSync(path.join(candidate, "sql-wasm.js")));
+    const entry = dir ? path.join(dir, "sql-wasm.js") : undefined;
+    if (!dir || !entry) {
+      return Promise.reject(new Error("The bundled SQLite runtime is missing from this extension build; reinstall the extension."));
     }
-    sqlJs = Promise.reject(new Error("sql.js runtime not found; run `npm run build:sqljs`."));
+    const init = createRequire(__filename)(entry) as (config: { locateFile: (file: string) => string }) => Promise<SqlJs>;
+    sqlJs = init({ locateFile: (file) => path.join(dir, file) });
+    sqlJs.catch(() => {
+      sqlJs = undefined; // let a later refresh retry initialisation
+    });
   }
   return sqlJs;
 }
