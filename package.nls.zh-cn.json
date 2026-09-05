@@ -19,5 +19,6 @@
   "configuration.displayCurrency.description": "成本显示货币，使用 3 位代码，例如 USD、TWD、JPY、EUR。成本以 USD 计算，显示时换算；`aiCodingUsage.exchangeRates` 的手动汇率优先于仪表板「更新公开汇率」获取的公开汇率，完全没有汇率时回退为 USD。",
   "configuration.exchangeRates.description": "手动汇率（每 1 USD 可兑换的目标货币数量），例如 `{\"TWD\": 32.5, \"JPY\": 155}`。手动汇率优先于仪表板「更新公开汇率」获取的公开汇率；不会自动联网获取。",
   "configuration.screenshotIncludePricing.description": "复制整页截图时包含计价规则面板。",
-  "configuration.screenshotIncludeSessions.description": "复制整页截图时包含会话表格。"
+  "configuration.screenshotIncludeSessions.description": "复制整页截图时包含会话表格。",
+  "configuration.piUsagePath.description": "pi coding agent 会话转录（omp、pi CLI、vscode-pi）的本地 path。留空时会自动套用检测到的本地来源。"
 }

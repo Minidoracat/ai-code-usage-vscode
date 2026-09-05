@@ -200,13 +200,17 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       return;
     }
 
-    let content = "";
-    try {
-      content = await fs.readFile(filePath, "utf8");
-    } catch (error) {
-      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+    // Whole-file JSON is the easiest target for read-during-write tearing
+    // (truncated exports, half-written files). Read with a stability check:
+    // if the file fingerprint changes between the pre-read stat and the
+    // post-read stat, wait briefly and retry once; only report a hard error
+    // when the file is stable and genuinely malformed.
+    const outcome = await this.readTextStable(filePath);
+    if (!outcome.ok) {
+      result.warnings.push(issue("warning", "file_transient", "Usage file changed while reading; skipped for this refresh (will retry on next refresh).", filePath, this.provider));
       return;
     }
+    const content = outcome.content;
 
     if (content.trim().length === 0) {
       result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
@@ -214,6 +218,37 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
 
     this.readJson(content, filePath, meta, result);
+  }
+
+  /**
+   * Reads a small text file with a before/after stat stability check and one
+   * retry after a short delay. Returns { ok: true, content } when stable,
+   * or { ok: false } when the file is still being written between attempts.
+   */
+/** Reads a text file with a before/after stat stability check and one retry. */
+  private async readTextStable(filePath: string): Promise<{ ok: true; content: string } | { ok: false }> {
+    const readOnce = async () => {
+      const before = await statOrUndefined(filePath);
+      let content: string | undefined;
+      try {
+        content = await fs.readFile(filePath, "utf8");
+      } catch {
+        return { before, after: undefined, content: undefined };
+      }
+      const after = await statOrUndefined(filePath);
+      return { before, after, content };
+    };
+
+    const first = await readOnce();
+    if (statStable(first.before, first.after)) {
+      return { ok: true, content: first.content as string };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const second = await readOnce();
+    if (statStable(second.before, second.after)) {
+      return { ok: true, content: second.content as string };
+    }
+    return { ok: false };
   }
 
   private readJson(content: string, filePath: string, meta: SourceMeta, result: AdapterImportResult): void {
@@ -233,40 +268,70 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   }
 
   private async readJsonLinesStreaming(filePath: string, meta: SourceMeta, result: AdapterImportResult): Promise<void> {
-    const rows: Array<{ line: number; row: unknown }> = [];
-    const collectLine = (line: string, lineNumber: number): void => {
-      if (!line.trim()) {
-        return;
-      }
-      try {
-        rows.push({ line: lineNumber, row: JSON.parse(line) as unknown });
-      } catch (error) {
-        result.errors.push(issue("error", "malformed_jsonl", errorMessage(error), filePath, this.provider, lineNumber));
-      }
-    };
-
-    let sawContent = false;
-    try {
+    // Streaming reads can also tear on files written concurrently (e.g. codex
+    // compaction rewriting a rollout in place). Parse into a local buffer
+    // first and compare pre/post-read stats after every attempt: an unstable
+    // fingerprint means the snapshot may be partial even when every line
+    // parsed, so retry once and otherwise skip the file entirely - no records,
+    // no diagnostics - so torn reads never land in the cache.
+    type Attempt = { rows: Array<{ line: number; row: unknown }>; errors: ImportIssue[]; sawContent: boolean };
+    const attempt = async (): Promise<Attempt> => {
+      const rows: Array<{ line: number; row: unknown }> = [];
+      const errors: ImportIssue[] = [];
+      const collectLine = (line: string, lineNumber: number): void => {
+        if (!line.trim()) {
+          return;
+        }
+        try {
+          rows.push({ line: lineNumber, row: JSON.parse(line) as unknown });
+        } catch (error) {
+          errors.push(issue("error", "malformed_jsonl", errorMessage(error), filePath, this.provider, lineNumber));
+        }
+      };
       const stream = await streamJsonlLines(filePath, collectLine);
-      sawContent = stream.sawContent;
+      const sawContent = stream.sawContent;
       if (stream.partialTail !== undefined) {
         collectLine(stream.partialTail, stream.lineCount + 1);
       }
-    } catch (error) {
-      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+      return { rows, errors, sawContent };
+    };
+
+    let out: Attempt | undefined;
+    for (let tries = 0; tries < 2; tries += 1) {
+      if (tries > 0) {
+        // Give the writer a moment to finish the record before retrying.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      const before = await statOrUndefined(filePath);
+      let candidate: Attempt;
+      try {
+        candidate = await attempt();
+      } catch (error) {
+        result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
+        return;
+      }
+      const after = await statOrUndefined(filePath);
+      if (statStable(before, after)) {
+        out = candidate;
+        break;
+      }
+    }
+    if (!out) {
+      // Still being written: treat as transient and skip both records and
+      // diagnostics so the next refresh (with a changed fingerprint) reparses
+      // the completed file cleanly.
+      result.warnings.push(issue("warning", "file_transient", "Usage file is being written while imported; skipping diagnostics for this refresh.", filePath, this.provider));
       return;
     }
+    result.errors.push(...out.errors);
 
-    if (!sawContent) {
+    if (!out.sawContent) {
       result.warnings.push(issue("warning", "empty_file", "Usage file is empty.", filePath, this.provider));
       return;
     }
 
-    const context = createFileContext(
-      filePath,
-      inferSingleModel(rows.map((entry) => entry.row)),
-    );
-    rows.forEach(({ line, row }) => {
+    const context = createFileContext(filePath, inferSingleModel(out.rows.map((entry) => entry.row)));
+    out.rows.forEach(({ line, row }) => {
       this.addRecord(row, filePath, meta, result, line, context);
     });
   }
@@ -364,6 +429,8 @@ function normalizeTokens(object: Record<string, unknown>): TokenBreakdown {
     "cacheWrite5m",
     source["cacheWrite5m"] ??
       source["cache_write_5m"] ??
+      source["cacheWrite"] ??
+      source["cache_write"] ??
       source["ephemeral_5m_input_tokens"] ??
       cacheCreation?.["ephemeral_5m_input_tokens"] ??
       source["cache_creation_input_tokens"],
@@ -394,7 +461,12 @@ function updateFileContext(context: FileContext, object: Record<string, unknown>
   if (model) {
     context.model = model;
   }
-  const sessionId = firstString(object, ["sessionId", "session_id", "conversationId", "conversation_id", "uuid", "payload.id", "payload.session_id"]);
+  // pi transcripts open with {"type":"session","id":"<uuid>"}; same-named files in
+  // different session directories must not collapse into one session.
+  const headerId = object["type"] === "session" ? object["id"] : undefined;
+  const sessionId =
+    (typeof headerId === "string" && headerId ? headerId : undefined) ??
+    firstString(object, ["sessionId", "session_id", "conversationId", "conversation_id", "uuid", "payload.id", "payload.session_id"]);
   if (sessionId) {
     context.sessionId = sessionId;
   }
@@ -420,14 +492,28 @@ function inferSingleModel(rows: unknown[]): string | undefined {
 
 function normalizeCost(object: Record<string, unknown>) {
   const costUsd = firstNumber(object, ["costUsd", "costUSD", "cost_usd", "totalCostUsd", "totalCostUSD", "total_cost_usd", "billing.costUsd", "billing.costUSD", "billing.cost_usd"]);
-  if (typeof costUsd !== "number") {
-    return undefined;
+  if (typeof costUsd === "number") {
+    return {
+      amount: costUsd,
+      currency: "USD",
+      source: "imported" as const,
+    };
   }
-  return {
-    amount: costUsd,
-    currency: "USD",
-    source: "imported" as const,
-  };
+  // pi agent session records (omp, pi CLI, vscode-pi) carry their real billed cost as
+  // message.usage.cost.{total,currency}. Prefer the imported total so the
+  // dashboard shows what the subscription actually billed.
+  const usageCost = objectAt(object, "message.usage.cost");
+  const total = typeof usageCost?.["total"] === "number" && Number.isFinite(usageCost["total"]) ? (usageCost["total"] as number) : undefined;
+  if (usageCost && typeof total === "number") {
+    const rawCurrency = usageCost["currency"];
+    const currency = typeof rawCurrency === "string" && /^[A-Za-z]{3}$/.test(rawCurrency) ? rawCurrency.toUpperCase() : "USD";
+    return {
+      amount: total,
+      currency,
+      source: "imported" as const,
+    };
+  }
+  return undefined;
 }
 
 function addNumber(tokens: TokenBreakdown, key: keyof TokenBreakdown, value: unknown): void {
@@ -568,6 +654,21 @@ function normalizeIso(value: string | undefined): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Stats a file, returning undefined when it cannot be read. */
+async function statOrUndefined(filePath: string): Promise<{ size: number; mtimeMs: number } | undefined> {
+  try {
+    const stat = await fs.stat(filePath);
+    return { size: stat.size, mtimeMs: stat.mtimeMs };
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when both stats exist and the file fingerprint did not change. */
+function statStable(before: { size: number; mtimeMs: number } | undefined, after: { size: number; mtimeMs: number } | undefined): boolean {
+  return Boolean(before && after && before.size === after.size && before.mtimeMs === after.mtimeMs);
 }
 
 class AsyncLimiter {

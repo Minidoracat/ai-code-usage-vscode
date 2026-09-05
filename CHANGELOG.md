@@ -7,6 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Claude Opus 5 pricing, matching `claude-opus-5`, `Claude Opus 5`, and `claude-opus-5[1m]`, with base, cache-write, and cache-read rates.
+- `pi` provider for pi coding agent session transcripts (omp, pi CLI, vscode-pi), auto-detected from `PI_CODING_AGENT_DIR`, `~/.omp/agent/sessions`, `~/.pi/agent/sessions`, and the vscode-pi global storage; billed cost is imported from the transcript.
+- Hourly trend buckets for ranges up to 48 hours, custom ranges with hour boundaries (`YYYY-MM-DDTHH`), and a cache-rate column in model usage cards.
+- DeepSeek V4 pricing rules and refreshed GPT-5.6 Sol/Terra/Luna rates (Sol: $4 / $0.40 / $20, long context $8 / $0.80 / $30).
+
+### Changed
+
+- Display currency switches as soon as a valid code is entered; the manual rate input is gone and `setCurrency` no longer touches `aiCodingUsage.exchangeRates` (set rates there or refresh public rates).
+- Hour buckets carry their UTC offset (`YYYY-MM-DDTHH±hh:mm`), so repeated local hours on DST fall-back days stay separate.
+- JSONL sources that change during import are retried once and then skipped for that refresh instead of importing a partial snapshot.
 
 ## 0.1.6 - 2026-07-10
 

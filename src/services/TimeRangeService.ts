@@ -1,11 +1,13 @@
 import type { TimeRange, TimeRangeKind, TimeZoneState } from "../domain/types";
 import {
   addDateKeyDays,
+  isValidDateHourKey,
   normalizeDateKey,
   resolveTimeZone,
   startOfMonthDateKey,
   startOfWeekDateKey,
   zonedDateKey,
+  zonedDateTimeHourToUtcIso,
   zonedDateTimeToUtcIso,
 } from "./TimeZoneService";
 
@@ -22,11 +24,7 @@ export class TimeRangeService {
     const zone = this.timeZone.resolvedTimeZone;
     const today = zonedDateKey(now, zone);
     if (kind === "custom") {
-      return this.fromDateKeys(
-        kind,
-        normalizeDateKey(custom?.start, zone) ?? today,
-        normalizeDateKey(custom?.end, zone) ?? today,
-      );
+      return this.fromCustomKeys(custom);
     }
 
     if (kind === "today") {
@@ -60,6 +58,37 @@ export class TimeRangeService {
     throw new Error(`Unsupported time range kind: ${exhaustiveKind}`);
   }
 
+  /**
+   * Custom ranges accept "YYYY-MM-DD" (whole local day) or "YYYY-MM-DDTHH"
+   * (local hour boundary, e.g. yesterday 18:00 -> today 18:00). Hour keys are
+   * echoed back as startHour/endHour for UI display.
+   */
+/** Resolves custom ranges, accepting "YYYY-MM-DD" or "YYYY-MM-DDTHH" hour boundaries. */
+  private fromCustomKeys(custom?: { start?: string; end?: string }): TimeRange {
+    const zone = this.timeZone.resolvedTimeZone;
+    const today = zonedDateKey(this.clock(), zone);
+    const startHourKey = isValidDateHourKey(custom?.start);
+    const endHourKey = isValidDateHourKey(custom?.end);
+    const startDateKey = normalizeDateKey(custom?.start, zone) ?? today;
+    const endDateKey = normalizeDateKey(custom?.end, zone) ?? today;
+    const start = startHourKey
+      ? zonedDateTimeHourToUtcIso(custom?.start as string, "start", zone)
+      : zonedDateTimeToUtcIso(startDateKey, "start", zone);
+    const end = endHourKey
+      ? zonedDateTimeHourToUtcIso(custom?.end as string, "end", zone)
+      : zonedDateTimeToUtcIso(endDateKey, "end", zone);
+    return {
+      kind: "custom",
+      startDate: startDateKey,
+      endDate: endDateKey,
+      start: start ?? zonedDateTimeToUtcIso(startDateKey, "start", zone),
+      end: end ?? zonedDateTimeToUtcIso(endDateKey, "end", zone),
+      timeZone: this.timeZone,
+      startHour: startHourKey ? custom?.start?.slice(-2) : undefined,
+      endHour: endHourKey ? custom?.end?.slice(-2) : undefined,
+    };
+  }
+
   private fromDateKeys(kind: TimeRangeKind, startDate: string, endDate: string): TimeRange {
     const zone = this.timeZone.resolvedTimeZone;
     return {
@@ -80,3 +109,4 @@ export function isWithinRange(iso: string | undefined, range: TimeRange): boolea
   const value = new Date(iso).getTime();
   return value >= new Date(range.start).getTime() && value <= new Date(range.end).getTime();
 }
+

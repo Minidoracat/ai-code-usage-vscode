@@ -1,4 +1,4 @@
-export const supportedProviders = ["claude", "codex"] as const;
+export const supportedProviders = ["claude", "codex", "pi"] as const;
 
 export type UsageProvider = (typeof supportedProviders)[number];
 
@@ -97,6 +97,9 @@ export type TimeRange = {
   start: string;
   end: string;
   timeZone: TimeZoneState;
+  /** Local hour key suffix ("HH") for custom ranges with hourly boundaries. */
+  startHour?: string;
+  endHour?: string;
 };
 
 export type UsageSession = {
@@ -141,6 +144,8 @@ export type UsageSummary = {
     tokens: TokenBreakdown;
     cost?: UsageCost;
   }>;
+  /** "hour" for ranges <= 48h (today/yesterday/short custom), "day" otherwise. */
+  trendGranularity?: "hour" | "day";
   sessions: UsageSession[];
   warnings: ImportIssue[];
   errors: ImportIssue[];

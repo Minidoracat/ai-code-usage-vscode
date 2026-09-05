@@ -42,12 +42,13 @@ const pendingWatchdogMs = 45_000;
 const loadingActivityWindowMs = 3_000;
 const minimumCustomDate = "2000-01-01";
 const ranges: readonly TimeRangeKind[] = timeRangeKinds;
-const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex"];
+const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex", "pi"];
 const localePreferences: DashboardLocalePreference[] = ["auto", "en", "zh-TW", "zh-CN", "ja", "ko"];
 const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
 const chartMetrics = ["cost", "input", "output", "cacheWrite", "cacheRead", "records"] as const;
 const chartSizes = ["compact", "comfortable", "expanded"] as const;
 const autoRefreshIntervals = [0, 60, 300, 900, 1800] as const;
+const customHourOptions = ["", ...Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"))];
 const pricingRateCategories: Array<{ category: Exclude<TokenCategory, "unknown">; labelKey: string }> = [
   { category: "input", labelKey: "metric.inputTokens" },
   { category: "output", labelKey: "metric.outputTokens" },
@@ -83,11 +84,12 @@ function Dashboard() {
   const [notice, setNotice] = useState<string>();
   const [customAutoRefreshInput, setCustomAutoRefreshInput] = useState("300");
   const [customTimeZoneInput, setCustomTimeZoneInput] = useState("Asia/Taipei");
-  const [currencyCodeInput, setCurrencyCodeInput] = useState("USD");
-  const [currencyRateInput, setCurrencyRateInput] = useState("");
+  const [currencyCodeInput, setCurrencyCodeInput] = useState("");
   const [pendingRequest, setPendingRequest] = useState<PendingRequest>();
   const [draftStart, setDraftStart] = useState<string>();
   const [draftEnd, setDraftEnd] = useState<string>();
+  const [draftStartHour, setDraftStartHour] = useState<string>();
+  const [draftEndHour, setDraftEndHour] = useState<string>();
   const [rangeError, setRangeError] = useState(false);
   const watchdogRef = useRef<number>();
   const loadingActivityRef = useRef<number>();
@@ -160,7 +162,15 @@ function Dashboard() {
   // does not invalidate (and rebuild uPlot) on every render.
   const stateMessages = state?.messages;
   const translate = useMemo(() => {
-    return (key: string) => (stateMessages ? (stateMessages[key] ?? key) : key);
+    return (key: string, args?: Record<string, string | number>) => {
+      let text = stateMessages ? (stateMessages[key] ?? key) : key;
+      if (args) {
+        for (const [name, value] of Object.entries(args)) {
+          text = text.split(`{${name}}`).join(String(value));
+        }
+      }
+      return text;
+    };
   }, [stateMessages]);
 
   // Costs and pricing rates are converted once here for display; everything
@@ -222,8 +232,12 @@ function Dashboard() {
       payload,
     });
   };
-  const customStart = draftStart ?? summary.range.startDate;
-  const customEnd = draftEnd ?? summary.range.endDate;
+  const customStartHour = draftStartHour ?? summary.range.startHour;
+  const customEndHour = draftEndHour ?? summary.range.endHour;
+  const startHourKey = parseHourKey(customStartHour);
+  const endHourKey = parseHourKey(customEndHour);
+  const customStart = (draftStart ?? summary.range.startDate) + (startHourKey ? `T${startHourKey}` : "");
+  const customEnd = (draftEnd ?? summary.range.endDate) + (endHourKey ? `T${endHourKey}` : "");
   const customRangeValid = isValidCustomRange(customStart, customEnd);
   const setRange = (kind: TimeRangeKind) => {
     if (kind !== "custom") {
@@ -244,18 +258,22 @@ function Dashboard() {
   const setTimeZone = (mode: TimeZoneMode, customTimeZone?: string) =>
     send("setTimeZone", { mode, customTimeZone }, { timeZoneMode: mode, customTimeZone });
   const activeCurrency = state.currency ?? { ...defaultDisplayCurrency, source: "default" as const };
-  // Empty rate = switch code only; a non-empty rate must be a positive number,
-  // otherwise Apply stays disabled instead of silently dropping the rate.
-  const currencyRateEmpty = currencyRateInput.trim() === "";
-  const currencyRateValid = Number.isFinite(Number(currencyRateInput)) && Number(currencyRateInput) > 0;
-  const currencyApplyEnabled = isValidCurrencyCode(currencyCodeInput) && (currencyRateEmpty || currencyRateValid);
-  const applyCurrency = () => {
-    const code = currencyCodeInput.trim().toUpperCase();
-    if (!isValidCurrencyCode(code)) {
-      return;
+  const showNotice = (message: string, timeout = 3_000) => {
+    setNotice(message);
+    window.setTimeout(() => {
+      setNotice((current) => (current === message ? undefined : current));
+    }, timeout);
+  };
+  const onCurrencyCodeInput = (event: Event) => {
+    const raw = (event.currentTarget as HTMLInputElement).value.trim().toUpperCase();
+    setCurrencyCodeInput(raw);
+    setRangeError(false);
+    // Selecting a complete code from the datalist (or typing one) switches the
+    // display currency immediately; no Apply step needed for code-only changes.
+    if (isValidCurrencyCode(raw) && raw !== (activeCurrency.code ?? "USD")) {
+      send("setCurrency", { code: raw }, {});
+      showNotice(translate("currency.applied", { code: raw }));
     }
-    send("setCurrency", currencyRateEmpty ? { code } : { code, rate: Number(currencyRateInput) }, {});
-    setCurrencyRateInput("");
   };
   const captureDashboard = async () => {
     const target = document.querySelector<HTMLElement>(".dashboard-frame");
@@ -384,7 +402,7 @@ function Dashboard() {
             <input
               id="startDate"
               type="date"
-              value={customStart}
+              value={draftStart ?? summary.range.startDate}
               min={minimumCustomDate}
               max={customEnd}
               onInput={(event) => {
@@ -392,19 +410,65 @@ function Dashboard() {
                 setRangeError(false);
               }}
             />
+            {activeRange === "custom" ? (
+              <input
+                type="text"
+                class="custom-hour-input"
+                list="start-hour-options"
+                maxLength={5}
+                placeholder="\u2014"
+                value={customStartHour ?? ""}
+                aria-label={translate("field.startHour")}
+                spellcheck={false}
+                onInput={(event) => {
+                  setDraftStartHour((event.currentTarget as HTMLInputElement).value.trim());
+                  setRangeError(false);
+                }}
+              />
+            ) : null}
+            {activeRange === "custom" ? (
+              <datalist id="start-hour-options">
+                {customHourOptions.slice(1).map((hour) => (
+                  <option value={`${hour}:00`} />
+                ))}
+              </datalist>
+            ) : null}
           </label>
           <label>
             <span>{translate("field.endDate")}</span>
             <input
               id="endDate"
               type="date"
-              value={customEnd}
+              value={draftEnd ?? summary.range.endDate}
               min={draftStart ?? minimumCustomDate}
               onInput={(event) => {
                 setDraftEnd((event.currentTarget as HTMLInputElement).value);
                 setRangeError(false);
               }}
             />
+            {activeRange === "custom" ? (
+              <input
+                type="text"
+                class="custom-hour-input"
+                list="end-hour-options"
+                maxLength={5}
+                placeholder="\u2014"
+                value={customEndHour ?? ""}
+                aria-label={translate("field.endHour")}
+                spellcheck={false}
+                onInput={(event) => {
+                  setDraftEndHour((event.currentTarget as HTMLInputElement).value.trim());
+                  setRangeError(false);
+                }}
+              />
+            ) : null}
+            {activeRange === "custom" ? (
+              <datalist id="end-hour-options">
+                {customHourOptions.slice(1).map((hour) => (
+                  <option value={`${hour}:00`} />
+                ))}
+              </datalist>
+            ) : null}
           </label>
           <button
             class={classNames("provider-filter-button", pendingRequest?.type === "setRange" && pendingRequest.rangeKind === "custom" && "pending")}
@@ -550,34 +614,17 @@ function Dashboard() {
               class="currency-code-input"
               list="currency-code-options"
               maxLength={3}
+              placeholder={translate("currency.codePlaceholder")}
               value={currencyCodeInput}
               aria-label={translate("currency.label")}
               spellcheck={false}
-              onInput={(event) => setCurrencyCodeInput((event.currentTarget as HTMLInputElement).value.toUpperCase())}
+              onInput={onCurrencyCodeInput}
             />
             <datalist id="currency-code-options">
               {(state.availableCurrencies ?? []).map((code) => (
                 <option key={code} value={code} />
               ))}
             </datalist>
-            <input
-              type="number"
-              class="currency-rate-input"
-              min="0"
-              step="any"
-              placeholder={translate("currency.rateLabel")}
-              value={currencyRateInput}
-              aria-label={translate("currency.rateLabel")}
-              onInput={(event) => setCurrencyRateInput((event.currentTarget as HTMLInputElement).value)}
-            />
-            <button
-              class={classNames("provider-filter-button", pendingRequest?.type === "setCurrency" && "pending")}
-              type="button"
-              disabled={isPending || !currencyApplyEnabled}
-              onClick={applyCurrency}
-            >
-              {translate("action.apply")}
-            </button>
             <button
               class={classNames("provider-filter-button", pendingRequest?.type === "refreshExchangeRates" && "pending")}
               type="button"
@@ -753,15 +800,24 @@ function LoadingRangeSummary(props: {
   return (
     <dl class="usage-metric-grid loading-range-card">
       <UsageMetric label={props.translate("filter.timeRange")} value={props.translate(`range.${props.range.kind}`)} />
-      <UsageMetric label={props.translate("field.startDate")} value={props.range.startDate} />
-      <UsageMetric label={props.translate("field.endDate")} value={props.range.endDate} />
+      <UsageMetric label={props.translate("field.startDate")} value={formatRangeBoundary(props.range, "start")} />
+      <UsageMetric label={props.translate("field.endDate")} value={formatRangeBoundary(props.range, "end")} />
       <UsageMetric label={props.translate("timezone.label")} value={props.range.timeZone.label} />
     </dl>
   );
 }
 
+/** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
+function formatRangeBoundary(range: { startDate: string; endDate: string; startHour?: string; endHour?: string }, side: "start" | "end"): string {
+  const date = side === "start" ? range.startDate : range.endDate;
+  const hour = side === "start" ? range.startHour : range.endHour;
+  return hour ? `${date} ${hour}:00` : date;
+}
+
 function formatLoadingRange(range: NonNullable<DashboardLoadingState["range"]>, translate: (key: string) => string): string {
-  const dateRange = range.startDate === range.endDate ? range.startDate : `${range.startDate} - ${range.endDate}`;
+  const start = formatRangeBoundary(range, "start");
+  const end = formatRangeBoundary(range, "end");
+  const dateRange = start === end ? start : `${start} - ${end}`;
   return `${translate(`range.${range.kind}`)} · ${dateRange} · ${range.timeZone.label}`;
 }
 
@@ -1025,6 +1081,7 @@ function UsageMetricGrid(props: { tokens: TokenBreakdown; records: number; local
       <UsageMetric label={translate("metric.outputTokens")} value={formatNumber(outputTokens(tokens), locale)} />
       <UsageMetric label={translate("metric.cacheCreate")} value={formatNumber(cacheCreateTokens(tokens), locale)} />
       <UsageMetric label={translate("metric.cacheRead")} value={formatNumber(cacheReadTokens(tokens), locale)} />
+      <UsageMetric label={translate("metric.cacheRate")} value={cacheRateText(tokens, locale)} />
       <UsageMetric label={translate("metric.messages")} value={formatNumber(records, locale)} />
     </dl>
   );
@@ -1089,14 +1146,19 @@ function TrendChart(props: { summary: UsageSummary; metric: ChartMetric; locale:
             stroke: providerColor(props.summary.providerFilter),
             fill: withAlpha(providerColor(props.summary.providerFilter), 0.14),
             width: 2,
-            points: { show: data[0].length <= 12, size: 5 },
+            points: { show: data[0].length <= 48, size: 5 },
           },
         ],
         axes: [
           {
             stroke: getCssColor("--vscode-descriptionForeground", "#8b949e"),
             grid: { stroke: withAlpha(getCssColor("--vscode-panel-border", "#30363d"), 0.6), width: 1 },
-            values: (_plot, ticks) => ticks.map((tick) => formatShortDate(tick, locale)),
+            values: (_plot, ticks) =>
+              ticks.map((tick) =>
+                (props.summary.trendGranularity ?? "day") === "hour"
+                  ? formatShortHour(tick, props.locale, props.summary.range.timeZone.resolvedTimeZone)
+                  : formatShortDate(tick, props.locale, props.summary.range.timeZone.resolvedTimeZone),
+              ),
           },
           {
             stroke: getCssColor("--vscode-descriptionForeground", "#8b949e"),
@@ -1245,9 +1307,10 @@ function IssuePanel(props: { summary: UsageSummary; translate: (key: string) => 
       </div>
       <div class="issue-list">
         {issues.slice(0, 20).map((issue) => (
-          <p key={`${issue.code}-${issue.sourcePath ?? ""}-${issue.line ?? 0}`}>
+          <p key={`${issue.code}-${issue.sourcePath ?? ""}-${issue.line ?? 0}`} class={`provider-${issue.provider ?? "unknown"}`}>
             <strong>{issue.code}</strong>
             <span>{issue.message}</span>
+            {issue.sourcePath ? <code class="issue-source">{issue.sourcePath}{issue.line ? `:${issue.line}` : ""}</code> : null}
           </p>
         ))}
       </div>
@@ -1284,7 +1347,7 @@ function NoticePanel(props: { message: string }) {
 function trendData(summary: UsageSummary, metric: ChartMetric): uPlot.AlignedData {
   const points = summary.trend
     .map((item, index) => {
-      const timestamp = dateKeyTimestamp(item.bucket);
+      const timestamp = dateKeyTimestamp(item.bucket, summary.range.timeZone.resolvedTimeZone);
       return {
         x: Number.isFinite(timestamp) ? timestamp : index,
         y: metric === "cost" ? item.cost?.amount ?? 0 : metric === "records" ? item.records : tokenMetricValue(item.tokens, metric),
@@ -1296,12 +1359,20 @@ function trendData(summary: UsageSummary, metric: ChartMetric): uPlot.AlignedDat
 }
 
 function trendDateRange(summary: UsageSummary): [number | null, number | null] {
-  const start = dateKeyTimestamp(summary.range.startDate);
-  const end = dateKeyTimestamp(summary.range.endDate);
+  if ((summary.trendGranularity ?? "day") === "hour") {
+    const start = new Date(summary.range.start).getTime() / 1_000;
+    const end = new Date(summary.range.end).getTime() / 1_000;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return [null, null];
+    }
+    return [start, end];
+  }
+  const start = dateKeyTimestamp(summary.range.startDate, summary.range.timeZone.resolvedTimeZone);
+  const end = Math.floor(new Date(summary.range.end).getTime() / 1_000);
   if (!Number.isFinite(start) || !Number.isFinite(end)) {
     return [null, null];
   }
-  return [start, end + 86_400];
+  return [start, end];
 }
 
 function chartLabel(metric: ChartMetric, translate: (key: string) => string): string {
@@ -1361,6 +1432,16 @@ function cacheCreateTokens(tokens: TokenBreakdown | undefined): number {
 
 function cacheReadTokens(tokens: TokenBreakdown | undefined): number {
   return (tokens?.cacheRead ?? 0) + (tokens?.cachedInput ?? 0);
+}
+
+/** Cache-hit ratio of input tokens; em dash when there is no input activity. */
+function cacheRateText(tokens: TokenBreakdown | undefined, locale: string): string {
+  const read = cacheReadTokens(tokens);
+  const total = (tokens?.input ?? 0) + read;
+  if (total <= 0) {
+    return "\u2014";
+  }
+  return cachedNumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(read / total);
 }
 
 function tokenMetricValue(tokens: TokenBreakdown | undefined, metric: Exclude<ChartMetric, "cost" | "records">): number {
@@ -1639,16 +1720,60 @@ function formatDuration(start: string | undefined, end: string | undefined, tran
   return parts.join(" ");
 }
 
-function formatShortDate(value: number, locale: string): string {
-  return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: "UTC" }).format(new Date(value * 1000));
+function formatShortDate(value: number, locale: string, timeZone?: string): string {
+  return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: timeZone ?? "UTC" }).format(new Date(value * 1000));
 }
 
-function dateKeyTimestamp(value: string): number {
+/** Formats an epoch second as a local HH:MM label for hourly trend axes. */
+function formatShortHour(value: number, locale: string, timeZone: string): string {
+  return cachedDateFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(value * 1000));
+}
+
+/**
+ * Converts a bucket key to an epoch second. Hour keys ("2026-11-01T01-04:00")
+ * carry their own UTC offset, so the two repeated hours of a DST fall-back
+ * resolve to different instants; day keys ("2026-11-01") resolve to local
+ * midnight in the given zone (UTC midnight when no zone is known).
+ */
+function dateKeyTimestamp(value: string, timeZone?: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) {
-    return Number.NaN;
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    return Math.floor((timeZone ? zonedLocalTimeToUtcEpoch(year, month, day, 0, timeZone) : Date.UTC(year, month - 1, day)) / 1000);
   }
-  return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 1000);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}[+-]\d{2}:\d{2}$/.test(value)) {
+    return Math.floor(Date.parse(`${value.slice(0, 13)}:00:00${value.slice(13)}`) / 1000);
+  }
+  return Number.NaN;
+}
+
+/** Offset in ms between the target zone wall clock and the given UTC instant. */
+function tzOffsetMs(date: Date, timeZone: string): number {
+  const parts: Record<string, number> = {};
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date)) {
+    if (part.type !== "literal") {
+      parts[part.type] = Number(part.value);
+    }
+  }
+  return Date.UTC(parts.year ?? 1970, (parts.month ?? 1) - 1, parts.day ?? 1, parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0) - date.getTime();
+}
+
+/** Local wall-clock fields to epoch ms via two-pass offset correction (DST-safe). */
+function zonedLocalTimeToUtcEpoch(year: number, month: number, day: number, hour: number, timeZone: string): number {
+  const utcGuess = Date.UTC(year, month - 1, day, hour);
+  const firstPass = utcGuess - tzOffsetMs(new Date(utcGuess), timeZone);
+  return utcGuess - tzOffsetMs(new Date(firstPass), timeZone);
 }
 
 const timeZoneValidityCache = new Map<string, boolean>();
@@ -1681,11 +1806,25 @@ function isValidCustomRange(start: string | undefined, end: string | undefined):
   if (!start || !end) {
     return false;
   }
-  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  const pattern = /^\d{4}-\d{2}-\d{2}(T\d{2})?$/;
   if (!pattern.test(start) || !pattern.test(end)) {
     return false;
   }
   return start >= minimumCustomDate && end >= start;
+}
+
+/** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
+/** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
+function parseHourKey(value: string | undefined): string | undefined {
+  const match = /^(\d{1,2})(?::00)?$/.exec((value ?? "").trim());
+  if (!match) {
+    return undefined;
+  }
+  const hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return undefined;
+  }
+  return String(hour).padStart(2, "0");
 }
 
 function restorePersistedState(): DashboardState | undefined {
@@ -1815,6 +1954,7 @@ type ReportPalette = {
   warning: string;
   claude: string;
   codex: string;
+  pi: string;
 };
 
 type ReportCanvas = {
@@ -1916,6 +2056,7 @@ function reportPalette(): ReportPalette {
     warning: canvasColor("--accent-3", "#cca700"),
     claude: canvasColor("--provider-claude", "#d97757"),
     codex: canvasColor("--provider-codex", "#10a37f"),
+    pi: canvasColor("--provider-pi", "#3b82f6"),
   };
 }
 
@@ -2053,12 +2194,18 @@ function drawReportTrend(report: ReportCanvas, options: ReportRenderOptions, y: 
   context.fillStyle = palette.muted;
   const first = options.summary.trend[0]?.bucket;
   const last = options.summary.trend[options.summary.trend.length - 1]?.bucket;
+  const reportTimeZone = options.summary.range?.timeZone?.resolvedTimeZone;
+  const reportHourly = (options.summary.trendGranularity ?? "day") === "hour";
+  // Hour buckets carry their own offset ("2026-11-01T01-04:00"); the label is
+  // the key's own wall-clock hour, so both DST fall-back hours read "01:00".
+  const formatBucketLabel = (bucket: string) =>
+    reportHourly ? `${bucket.slice(11, 13)}:00` : formatShortDate(dateKeyTimestamp(bucket, reportTimeZone), options.locale, reportTimeZone);
   if (first) {
-    context.fillText(formatShortDate(dateKeyTimestamp(first), options.locale), plot.x, plot.y + plot.height + 24);
+    context.fillText(formatBucketLabel(first), plot.x, plot.y + plot.height + 24);
   }
   if (last) {
     context.textAlign = "right";
-    context.fillText(formatShortDate(dateKeyTimestamp(last), options.locale), plot.x + plot.width, plot.y + plot.height + 24);
+    context.fillText(formatBucketLabel(last), plot.x + plot.width, plot.y + plot.height + 24);
     context.textAlign = "left";
   }
   return y + height;
@@ -2070,7 +2217,7 @@ function drawReportProviders(report: ReportCanvas, options: ReportRenderOptions,
   report.context.fillStyle = report.palette.muted;
   report.context.fillText(options.translate("section.providers"), report.margin + 14, y + 24);
   options.summary.providerSplit.forEach((item, index) => {
-    const color = item.provider === "claude" ? report.palette.claude : report.palette.codex;
+    const color = report.palette[item.provider] ?? report.palette.text;
     const rowY = y + 48 + index * 28;
     setReportFont(report, 12, 600);
     report.context.fillStyle = color;
@@ -2091,7 +2238,7 @@ function drawReportModels(report: ReportCanvas, options: ReportRenderOptions, y:
   report.context.fillStyle = report.palette.muted;
   report.context.fillText(options.translate("section.models"), report.margin + 14, y + 24);
   models.forEach((model, index) => {
-    const color = model.provider === "claude" ? report.palette.claude : report.palette.codex;
+    const color = report.palette[model.provider] ?? report.palette.text;
     const rowY = y + 42 + index * 78;
     drawReportCard(report, report.margin + 10, rowY, width - 20, 66, color, withAlpha(color, 0.1));
     setReportFont(report, 13, 700);
@@ -2124,7 +2271,7 @@ function drawReportPricing(report: ReportCanvas, options: ReportRenderOptions, y
   report.context.fillText(options.translate("section.pricing"), report.margin + 14, y + 24);
   let rowOffset = 0;
   rules.forEach((rule) => {
-    const color = rule.provider === "claude" ? report.palette.claude : report.palette.codex;
+    const color = report.palette[rule.provider] ?? report.palette.text;
     const rowY = y + 42 + rowOffset;
     const badgeLines = formatPricingBadge(rule, options.locale, options.translate);
     setReportFont(report, 12, 600);
@@ -2500,6 +2647,9 @@ function providerColor(provider: UsageProviderFilter): string {
   }
   if (provider === "codex") {
     return getCssColor("--provider-codex", "#10a37f");
+  }
+  if (provider === "pi") {
+    return getCssColor("--provider-pi", "#3b82f6");
   }
   return getCssColor("--vscode-charts-blue", "#3794ff");
 }

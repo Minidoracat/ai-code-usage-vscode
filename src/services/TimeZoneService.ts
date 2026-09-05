@@ -44,6 +44,80 @@ export function zonedDateKey(date: Date, timeZone: string): string {
   return dateKey(parts.year, parts.month, parts.day);
 }
 
+/**
+ * Local-hour key for a timestamp, e.g. "2026-08-08T14+08:00" in the target
+ * zone: local wall-clock hour plus its UTC offset. The offset keeps the two
+ * repeated local hours of a DST fall-back in separate buckets.
+ */
+export function zonedHourKey(epochMs: number, timeZone: string): string {
+  const parts = zonedParts(new Date(epochMs), timeZone);
+  return `${dateKey(parts.year, parts.month, parts.day)}T${String(parts.hour).padStart(2, "0")}${parts.offset}`;
+}
+
+/**
+ * Precomputes local-hour boundaries for an ISO range so per-record bucketing
+ * is a binary search, mirroring makeZonedDayBucketer. Keys come from
+ * zonedHourKey ("YYYY-MM-DDTHH±hh:mm") on both the precomputed and the
+ * fallback path. Timestamps outside the precomputed window fall back to
+ * zonedHourKey directly.
+ */
+export function makeZonedHourBucketer(startIso: string, endIso: string, timeZone: string): (epochMs: number) => string {
+  const keys: string[] = [];
+  const boundaries: number[] = [];
+  let lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  try {
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+      throw new Error("invalid range");
+    }
+    const firstMs = Math.min(startMs, endMs);
+    const lastMs = Math.max(startMs, endMs);
+    // Round the window start down to the local hour boundary, then walk one
+    // local hour at a time. The hour count is bounded by the caller's
+    // granularity choice (<= 48h ranges), plus a hard cap as a safety net.
+    const maxPrecomputedHours = 192;
+    const startParts = zonedParts(new Date(firstMs), timeZone);
+    const cursor = zonedLocalTimeToUtc(startParts.year, startParts.month, startParts.day, startParts.hour, 0, 0, 0, timeZone).getTime();
+    for (let index = 0; index < maxPrecomputedHours && cursor + index * 3_600_000 <= lastMs; index += 1) {
+      const boundaryMs = cursor + index * 3_600_000;
+      keys.push(zonedHourKey(boundaryMs, timeZone));
+      boundaries.push(boundaryMs);
+    }
+    if (keys.length > 0) {
+      const lastBoundary = boundaries[boundaries.length - 1];
+      if (lastBoundary !== undefined) {
+        lastBoundaryEnd = lastBoundary + 3_600_000;
+      }
+    }
+  } catch {
+    keys.length = 0;
+    boundaries.length = 0;
+    lastBoundaryEnd = Number.NEGATIVE_INFINITY;
+  }
+  return (epochMs: number): string => {
+    const firstBoundary = boundaries[0];
+    if (keys.length === 0 || firstBoundary === undefined || epochMs < firstBoundary || epochMs > lastBoundaryEnd) {
+      return zonedHourKey(epochMs, timeZone);
+    }
+    let low = 0;
+    let high = boundaries.length - 1;
+    let found = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const boundary = boundaries[mid];
+      if (boundary !== undefined && boundary <= epochMs) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    const key = keys[found];
+    return key ?? zonedHourKey(epochMs, timeZone);
+  };
+}
+
 const maxPrecomputedBucketDays = 4_000;
 
 /**
@@ -120,6 +194,34 @@ export function zonedDateTimeToUtcIso(date: string, side: "start" | "end", timeZ
   return zonedLocalTimeToUtc(parts.year, parts.month, parts.day, hour, minute, second, millisecond, timeZone).toISOString();
 }
 
+/**
+ * True for a local hour key "YYYY-MM-DDTHH" whose date is a real calendar day
+ * and whose hour is 00-23. Shared by the custom-range parser and the hour-key
+ * resolver so both reject "2020-02-30T12" or "2020-01-01T24" alike.
+ */
+export function isValidDateHourKey(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})$/.exec(value);
+  return match !== null && isValidDateKey(match[1]!) && Number(match[2]) <= 23;
+}
+
+/** Resolves a local "YYYY-MM-DDTHH" hour key to an ISO instant (HH:00:00.000 start / HH:59:59.999 end). */
+export function zonedDateTimeHourToUtcIso(dateHourKey: string, side: "start" | "end", timeZone: string): string | undefined {
+  if (!isValidDateHourKey(dateHourKey)) {
+    return undefined;
+  }
+  const year = Number(dateHourKey.slice(0, 4));
+  const month = Number(dateHourKey.slice(5, 7));
+  const day = Number(dateHourKey.slice(8, 10));
+  const hour = Number(dateHourKey.slice(11, 13));
+  if (side === "start") {
+    return zonedLocalTimeToUtc(year, month, day, hour, 0, 0, 0, timeZone).toISOString();
+  }
+  return zonedLocalTimeToUtc(year, month, day, hour, 59, 59, 999, timeZone).toISOString();
+}
+
 export function addDateKeyDays(value: string, days: number): string {
   const parts = parseDateKey(value);
   const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
@@ -189,9 +291,14 @@ function offsetMs(date: Date, timeZone: string): number {
 
 function zonedParts(date: Date, timeZone: string): DateParts {
   const values: Partial<DateParts> = {};
+  let offset = "+00:00";
   for (const part of dateFormatter(timeZone).formatToParts(date)) {
     if (part.type === "year" || part.type === "month" || part.type === "day" || part.type === "hour" || part.type === "minute" || part.type === "second") {
       values[part.type] = Number(part.value);
+    } else if (part.type === "timeZoneName") {
+      // "GMT-04:00" / "GMT+5:30" -> "-04:00" / "+05:30"; bare "GMT" -> "+00:00".
+      const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part.value);
+      offset = match ? `${match[1]}${match[2]!.padStart(2, "0")}:${match[3] ?? "00"}` : "+00:00";
     }
   }
   return {
@@ -201,6 +308,7 @@ function zonedParts(date: Date, timeZone: string): DateParts {
     hour: values.hour ?? 0,
     minute: values.minute ?? 0,
     second: values.second ?? 0,
+    offset,
   };
 }
 
@@ -220,6 +328,7 @@ function dateFormatter(timeZone: string): Intl.DateTimeFormat {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZoneName: "longOffset",
   });
   dateFormatterCache.set(timeZone, formatter);
   return formatter;
@@ -259,4 +368,6 @@ type DateParts = {
   hour: number;
   minute: number;
   second: number;
+  /** UTC offset of that local instant, "±hh:mm". */
+  offset: string;
 };

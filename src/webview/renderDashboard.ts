@@ -38,7 +38,7 @@ function createInitialLoadingState(): DashboardLoadingState {
   const localePreference = localePreferenceFromConfig(config);
   const locale = normalizeLocale(localePreference === "auto" ? vscode.env.language : localePreference);
   const candidates = usageSourceCandidates();
-  const sources = (["claude", "codex"] as const).map((provider) => {
+  const sources = (["claude", "codex", "pi"] as const).map((provider) => {
     const configuredPath = config.get<string>(`${provider}.usagePath`, "").trim();
     if (configuredPath && !isNativeUsagePath(configuredPath)) {
       return { provider, status: "invalid" as const, path: configuredPath };
@@ -127,10 +127,18 @@ function renderLoadingRange(state: DashboardLoadingState): string {
   }
   return `<dl class="usage-metric-grid loading-range-card">
     <div><dt>${escapeHtml(t("filter.timeRange"))}</dt><dd>${escapeHtml(t(`range.${range.kind}`))}</dd></div>
-    <div><dt>${escapeHtml(t("field.startDate"))}</dt><dd>${escapeHtml(range.startDate)}</dd></div>
-    <div><dt>${escapeHtml(t("field.endDate"))}</dt><dd>${escapeHtml(range.endDate)}</dd></div>
+    <div><dt>${escapeHtml(t("field.startDate"))}</dt><dd>${escapeHtml(formatRangeBoundaryHtml(range, "start"))}</dd></div>
+    <div><dt>${escapeHtml(t("field.endDate"))}</dt><dd>${escapeHtml(formatRangeBoundaryHtml(range, "end"))}</dd></div>
     <div><dt>${escapeHtml(t("timezone.label"))}</dt><dd>${escapeHtml(range.timeZone.label)}</dd></div>
   </dl>`;
+}
+
+/** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
+/** Renders "YYYY-MM-DD HH:00" when the boundary has an hourly component. */
+function formatRangeBoundaryHtml(range: { startDate: string; endDate: string; startHour?: string; endHour?: string }, side: "start" | "end"): string {
+  const date = side === "start" ? range.startDate : range.endDate;
+  const hour = side === "start" ? range.startHour : range.endHour;
+  return hour ? `${date} ${hour}:00` : date;
 }
 
 function createNonce(): string {

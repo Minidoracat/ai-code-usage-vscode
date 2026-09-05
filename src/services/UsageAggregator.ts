@@ -12,7 +12,7 @@ import type {
   UsageSummary,
 } from "../domain/types";
 import { estimateRecordCost, PricingService } from "./PricingService";
-import { makeZonedDayBucketer } from "./TimeZoneService";
+import { makeZonedDayBucketer, makeZonedHourBucketer } from "./TimeZoneService";
 
 export class UsageAggregator {
   // Both caches are rebuilt at the top of every aggregate() call; they exist so
@@ -42,6 +42,7 @@ export class UsageAggregator {
       providerSplit: this.buildProviderSplit(records),
       modelSplit: this.buildModelSplit(records),
       trend: this.buildTrend(records, range),
+      trendGranularity: this.trendGranularity(range),
       sessions: this.buildSessions(records),
       warnings,
       errors,
@@ -78,7 +79,7 @@ export class UsageAggregator {
   }
 
   private buildProviderSplit(records: UsageRecord[]): UsageSummary["providerSplit"] {
-    const providers: UsageProvider[] = ["claude", "codex"];
+    const providers: UsageProvider[] = ["claude", "codex", "pi"];
     return providers.map((provider) => {
       const providerRecords = records.filter((record) => record.provider === provider);
       return {
@@ -113,16 +114,32 @@ export class UsageAggregator {
       .sort((a, b) => b.records - a.records);
   }
 
+  /** Ranges up to 48h (today/yesterday/short custom) get hourly buckets. */
+/** Ranges up to 48h (today/yesterday/short custom) get hourly buckets. */
+  private trendGranularity(range: TimeRange): "hour" | "day" {
+    const spanMs = new Date(range.end).getTime() - new Date(range.start).getTime();
+    return Number.isFinite(spanMs) && spanMs <= 48 * 3_600_000 ? "hour" : "day";
+  }
+
   private buildTrend(records: UsageRecord[], range: TimeRange): UsageSummary["trend"] {
-    const bucketOf = makeZonedDayBucketer(range.startDate, range.endDate, range.timeZone.resolvedTimeZone);
+    const hourGranularity = this.trendGranularity(range) === "hour";
+    const bucketOf = hourGranularity
+      ? makeZonedHourBucketer(range.start, range.end, range.timeZone.resolvedTimeZone)
+      : makeZonedDayBucketer(range.startDate, range.endDate, range.timeZone.resolvedTimeZone);
     const groups = new Map<string, UsageRecord[]>();
     for (const record of records) {
       const bucket = bucketOf(new Date(record.startedAt ?? record.observedAt).getTime());
       pushGroup(groups, bucket, record);
     }
 
+    // Hour keys carry their UTC offset, so a DST fall-back yields two buckets
+    // with the same wall-clock hour; compare instants, not text, to order them.
     return [...groups.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) =>
+        hourGranularity
+          ? Date.parse(`${a.slice(0, 13)}:00:00${a.slice(13)}`) - Date.parse(`${b.slice(0, 13)}:00:00${b.slice(13)}`)
+          : a.localeCompare(b),
+      )
       .map(([bucket, groupRecords]) => ({
         bucket,
         records: groupRecords.length,

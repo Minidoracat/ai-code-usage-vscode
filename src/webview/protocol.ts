@@ -79,7 +79,6 @@ export type WebviewRequest =
       version: typeof webviewProtocolVersion;
       payload: {
         code: string;
-        rate?: number;
       };
     }
   | {
@@ -207,7 +206,7 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setProvider" && isObject(value["payload"])) {
     const provider = value["payload"]["provider"];
-    if (provider === "all" || provider === "claude" || provider === "codex") {
+    if (provider === "all" || provider === "claude" || provider === "codex" || provider === "pi") {
       return {
         requestId: value["requestId"],
         type: "setProvider",
@@ -240,18 +239,12 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setCurrency" && isObject(value["payload"])) {
     const code = value["payload"]["code"];
-    const rate = value["payload"]["rate"];
-    const validCode = typeof code === "string" && /^[A-Za-z]{3}$/.test(code.trim());
-    const validRate = rate === undefined || (typeof rate === "number" && Number.isFinite(rate) && rate > 0);
-    if (validCode && validRate) {
+    if (typeof code === "string" && /^[A-Za-z]{3}$/.test(code.trim())) {
       return {
         requestId: value["requestId"],
         type: "setCurrency",
         version: webviewProtocolVersion,
-        payload: {
-          code: (code as string).trim().toUpperCase(),
-          rate: rate as number | undefined,
-        },
+        payload: { code: code.trim().toUpperCase() },
       };
     }
   }

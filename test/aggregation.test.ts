@@ -116,7 +116,7 @@ test("trend buckets use selected time zone date keys", () => {
   ], range);
 
   assert.equal(summary.totals.records, 1);
-  assert.equal(summary.trend[0]?.bucket, "2026-05-01");
+  assert.equal(summary.trend[0]?.bucket, "2026-05-01T01+08:00"); // today is hourly now
 });
 
 test("empty input returns zero totals", () => {
@@ -125,7 +125,7 @@ test("empty input returns zero totals", () => {
 
   assert.equal(summary.totals.records, 0);
   assert.equal(summary.totals.sessions, 0);
-  assert.equal(summary.providerSplit.length, 2);
+  assert.equal(summary.providerSplit.length, 3);
 });
 
 test("provider filter limits totals to selected provider", () => {
@@ -240,8 +240,8 @@ test("aggregator keeps long-context pricing per record instead of repricing the 
   );
 
   assert.equal(summary.totals.tokens.input, 400_000);
-  assert.equal(summary.totals.cost?.amount, 2);
-  assert.equal(summary.sessions[0]?.cost?.amount, 2);
+  assert.equal(summary.totals.cost?.amount, 1.6);
+  assert.equal(summary.sessions[0]?.cost?.amount, 1.6);
 });
 
 function records(): UsageRecord[] {
