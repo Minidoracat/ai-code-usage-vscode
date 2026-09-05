@@ -1,12 +1,13 @@
 {
-  "checkedAt": "2026-09-05T00:00:00.000Z",
+  "checkedAt": "2026-09-06T00:00:00.000Z",
   "sourceUrls": [
     "https://developers.openai.com/codex/pricing",
     "https://developers.openai.com/api/docs/pricing",
     "https://platform.claude.com/docs/en/about-claude/pricing",
     "https://platform.claude.com/docs/en/about-claude/models/overview",
     "https://openai.com/api/pricing/",
-    "https://api-docs.deepseek.com/quick_start/pricing"
+    "https://api-docs.deepseek.com/quick_start/pricing",
+    "https://docs.x.ai/developers/models"
   ],
   "rules": [
     {
@@ -540,6 +541,151 @@
         "cacheRead": 0.003625,
         "cacheWrite5m": 0.435,
         "output": 0.87
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-4.6",
+      "modelAliases": [
+        "grok-4.6-latest"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 2,
+        "cachedInput": 0.5,
+        "output": 6
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 4,
+          "cachedInput": 1,
+          "output": 12
+        }
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-4.5",
+      "modelAliases": [
+        "grok-4.5-latest"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 2,
+        "cachedInput": 0.3,
+        "output": 6
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 4,
+          "cachedInput": 0.6,
+          "output": 12
+        }
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-4.3",
+      "modelAliases": [
+        "grok-4.3-latest"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 1.25,
+        "cachedInput": 0.2,
+        "output": 2.5
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 2.5,
+          "cachedInput": 0.4,
+          "output": 5
+        }
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-4.20-0309-reasoning",
+      "modelAliases": [
+        "grok-4.20",
+        "grok-4.20-reasoning"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 1.25,
+        "cachedInput": 0.2,
+        "output": 2.5
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 2.5,
+          "cachedInput": 0.4,
+          "output": 5
+        }
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-4.20-0309-non-reasoning",
+      "modelAliases": [
+        "grok-4.20-non-reasoning"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 1.25,
+        "cachedInput": 0.2,
+        "output": 2.5
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 2.5,
+          "cachedInput": 0.4,
+          "output": 5
+        }
+      }
+    },
+    {
+      "provider": "pi",
+      "model": "grok-build-0.1",
+      "modelAliases": [
+        "grok-build"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://docs.x.ai/developers/models",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "rates": {
+        "input": 1,
+        "cachedInput": 0.2,
+        "output": 2
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 199999,
+        "rates": {
+          "input": 2,
+          "cachedInput": 0.4,
+          "output": 4
+        }
       }
     }
   ]

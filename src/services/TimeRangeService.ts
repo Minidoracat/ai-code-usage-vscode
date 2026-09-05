@@ -63,7 +63,6 @@ export class TimeRangeService {
    * (local hour boundary, e.g. yesterday 18:00 -> today 18:00). Hour keys are
    * echoed back as startHour/endHour for UI display.
    */
-/** Resolves custom ranges, accepting "YYYY-MM-DD" or "YYYY-MM-DDTHH" hour boundaries. */
   private fromCustomKeys(custom?: { start?: string; end?: string }): TimeRange {
     const zone = this.timeZone.resolvedTimeZone;
     const today = zonedDateKey(this.clock(), zone);

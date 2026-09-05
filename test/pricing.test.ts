@@ -487,7 +487,7 @@ test("pi records without a pi-specific rule price with the model's native vendor
   const pricing = new PricingService(await srcCatalog());
   const claude = pricing.estimate(record("pi", "claude-opus-5", { input: 1_000_000 }));
   const codex = pricing.estimate(record("pi", "gpt-6-astra", { input: 100_000 }));
-  const unknown = pricing.estimate(record("pi", "grok-4.6", { input: 1_000_000 }));
+  const unknown = pricing.estimate(record("pi", "some-unknown-model", { input: 1_000_000 }));
 
   assert.equal(claude.available && claude.cost.amount, 5);
   assert.equal(codex.available && codex.cost.amount, 1);
@@ -530,4 +530,16 @@ test("pi fallback honours dated vendor rules per record, regardless of import or
       assert.equal(estimate.available && estimate.cost.amount, expected.get(item), item.startedAt);
     }
   }
+});
+
+test("current catalog prices xAI Grok models with the 200K long-context threshold", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const short = pricing.estimate(record("pi", "grok-4.6", { input: 100_000, cacheRead: 99_999, output: 1_000 }));
+  const long = pricing.estimate(record("pi", "grok-4.6", { input: 100_000, cacheRead: 100_000, output: 1_000 }));
+  const alias = pricing.estimate(record("pi", "grok-4.20", { input: 1_000_000 }));
+
+  // 100K*2 + 99,999*0.5 + 1K*6 ; cacheRead is priced as cachedInput and counts toward the prompt.
+  assert.equal(short.available && short.cost.amount, 0.256);
+  assert.equal(long.available && long.cost.amount, 0.512);
+  assert.equal(alias.available && alias.cost.amount, 2.5);
 });

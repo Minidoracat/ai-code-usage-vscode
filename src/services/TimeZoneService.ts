@@ -267,7 +267,7 @@ export function timeZoneOffsetLabel(timeZone: string, date = new Date()): string
   return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-function zonedLocalTimeToUtc(
+export function zonedLocalTimeToUtc(
   year: number,
   month: number,
   day: number,

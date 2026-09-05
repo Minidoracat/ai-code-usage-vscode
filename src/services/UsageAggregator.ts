@@ -115,7 +115,6 @@ export class UsageAggregator {
   }
 
   /** Ranges up to 48h (today/yesterday/short custom) get hourly buckets. */
-/** Ranges up to 48h (today/yesterday/short custom) get hourly buckets. */
   private trendGranularity(range: TimeRange): "hour" | "day" {
     const spanMs = new Date(range.end).getTime() - new Date(range.start).getTime();
     return Number.isFinite(spanMs) && spanMs <= 48 * 3_600_000 ? "hour" : "day";

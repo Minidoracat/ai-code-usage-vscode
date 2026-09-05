@@ -17,6 +17,7 @@ import type {
 import { convertPricingCatalog, convertSummaryCurrency, defaultDisplayCurrency } from "../src/domain/currency";
 import { timeRangeKinds } from "../src/domain/timeRange";
 import { findPricingRule } from "../src/services/PricingService";
+import { zonedLocalTimeToUtc } from "../src/services/TimeZoneService";
 import {
   webviewProtocolVersion,
   type DashboardLoadingPhase,
@@ -48,7 +49,7 @@ const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
 const chartMetrics = ["cost", "input", "output", "cacheWrite", "cacheRead", "records"] as const;
 const chartSizes = ["compact", "comfortable", "expanded"] as const;
 const autoRefreshIntervals = [0, 60, 300, 900, 1800] as const;
-const customHourOptions = ["", ...Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"))];
+const customHourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const pricingRateCategories: Array<{ category: Exclude<TokenCategory, "unknown">; labelKey: string }> = [
   { category: "input", labelKey: "metric.inputTokens" },
   { category: "output", labelKey: "metric.outputTokens" },
@@ -410,29 +411,7 @@ function Dashboard() {
                 setRangeError(false);
               }}
             />
-            {activeRange === "custom" ? (
-              <input
-                type="text"
-                class="custom-hour-input"
-                list="start-hour-options"
-                maxLength={5}
-                placeholder="\u2014"
-                value={customStartHour ?? ""}
-                aria-label={translate("field.startHour")}
-                spellcheck={false}
-                onInput={(event) => {
-                  setDraftStartHour((event.currentTarget as HTMLInputElement).value.trim());
-                  setRangeError(false);
-                }}
-              />
-            ) : null}
-            {activeRange === "custom" ? (
-              <datalist id="start-hour-options">
-                {customHourOptions.slice(1).map((hour) => (
-                  <option value={`${hour}:00`} />
-                ))}
-              </datalist>
-            ) : null}
+            {activeRange === "custom" ? <HourInput id="start-hour-options" value={customStartHour} label={translate("field.startHour")} onChange={(value) => { setDraftStartHour(value); setRangeError(false); }} /> : null}
           </label>
           <label>
             <span>{translate("field.endDate")}</span>
@@ -446,29 +425,7 @@ function Dashboard() {
                 setRangeError(false);
               }}
             />
-            {activeRange === "custom" ? (
-              <input
-                type="text"
-                class="custom-hour-input"
-                list="end-hour-options"
-                maxLength={5}
-                placeholder="\u2014"
-                value={customEndHour ?? ""}
-                aria-label={translate("field.endHour")}
-                spellcheck={false}
-                onInput={(event) => {
-                  setDraftEndHour((event.currentTarget as HTMLInputElement).value.trim());
-                  setRangeError(false);
-                }}
-              />
-            ) : null}
-            {activeRange === "custom" ? (
-              <datalist id="end-hour-options">
-                {customHourOptions.slice(1).map((hour) => (
-                  <option value={`${hour}:00`} />
-                ))}
-              </datalist>
-            ) : null}
+            {activeRange === "custom" ? <HourInput id="end-hour-options" value={customEndHour} label={translate("field.endHour")} onChange={(value) => { setDraftEndHour(value); setRangeError(false); }} /> : null}
           </label>
           <button
             class={classNames("provider-filter-button", pendingRequest?.type === "setRange" && pendingRequest.rangeKind === "custom" && "pending")}
@@ -1275,6 +1232,29 @@ function SessionTable(props: { summary: UsageSummary; locale: string; translate:
   );
 }
 
+function HourInput(props: { id: string; value: string | undefined; label: string; onChange: (value: string) => void }) {
+  return (
+    <>
+      <input
+        type="text"
+        class="custom-hour-input"
+        list={props.id}
+        maxLength={5}
+        placeholder="\u2014"
+        value={props.value ?? ""}
+        aria-label={props.label}
+        spellcheck={false}
+        onInput={(event) => props.onChange((event.currentTarget as HTMLInputElement).value.trim())}
+      />
+      <datalist id={props.id}>
+        {customHourOptions.map((hour) => (
+          <option value={`${hour}:00`} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 function ProviderBadge(props: { provider: UsageProvider }) {
   return (
     <span class={`provider-badge provider-${props.provider}`}>
@@ -1747,7 +1727,7 @@ function dateKeyTimestamp(value: string, timeZone?: string): number {
     const year = Number(match[1]);
     const month = Number(match[2]);
     const day = Number(match[3]);
-    return Math.floor((timeZone ? zonedLocalTimeToUtcEpoch(year, month, day, 0, timeZone) : Date.UTC(year, month - 1, day)) / 1000);
+    return Math.floor((timeZone ? zonedLocalTimeToUtc(year, month, day, 0, 0, 0, 0, timeZone).getTime() : Date.UTC(year, month - 1, day)) / 1000);
   }
   if (/^\d{4}-\d{2}-\d{2}T\d{2}[+-]\d{2}:\d{2}$/.test(value)) {
     return Math.floor(Date.parse(`${value.slice(0, 13)}:00:00${value.slice(13)}`) / 1000);
@@ -1755,32 +1735,6 @@ function dateKeyTimestamp(value: string, timeZone?: string): number {
   return Number.NaN;
 }
 
-/** Offset in ms between the target zone wall clock and the given UTC instant. */
-function tzOffsetMs(date: Date, timeZone: string): number {
-  const parts: Record<string, number> = {};
-  for (const part of new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(date)) {
-    if (part.type !== "literal") {
-      parts[part.type] = Number(part.value);
-    }
-  }
-  return Date.UTC(parts.year ?? 1970, (parts.month ?? 1) - 1, parts.day ?? 1, parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0) - date.getTime();
-}
-
-/** Local wall-clock fields to epoch ms via two-pass offset correction (DST-safe). */
-function zonedLocalTimeToUtcEpoch(year: number, month: number, day: number, hour: number, timeZone: string): number {
-  const utcGuess = Date.UTC(year, month - 1, day, hour);
-  const firstPass = utcGuess - tzOffsetMs(new Date(utcGuess), timeZone);
-  return utcGuess - tzOffsetMs(new Date(firstPass), timeZone);
-}
 
 const timeZoneValidityCache = new Map<string, boolean>();
 
@@ -1819,7 +1773,6 @@ function isValidCustomRange(start: string | undefined, end: string | undefined):
   return start >= minimumCustomDate && end >= start;
 }
 
-/** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
 /** Parses "18", "18:00" or "9" into a zero-padded hour key ("18"/"09"). */
 function parseHourKey(value: string | undefined): string | undefined {
   const match = /^(\d{1,2})(?::00)?$/.exec((value ?? "").trim());

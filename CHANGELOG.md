@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending release
+
+### Added
+
+- xAI Grok pricing (grok-4.6 / 4.5 / 4.3 / 4.20 / build-0.1) for pi transcripts, with the 200K long-context tier; Grok model cards now show rates instead of only the billed amount.
+
+### Changed
+
+- Webview provider filter and dashboard coverage validation accept every supported provider instead of a hard-coded list.
+
 ## 0.1.7 - 2026-09-05
 
 ### Added

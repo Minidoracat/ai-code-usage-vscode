@@ -9,6 +9,7 @@ import type {
   UsageSummary,
 } from "../domain/types";
 import { isTimeRangeKind } from "../domain/timeRange";
+import { supportedProviders } from "../domain/types";
 import type { DisplayCurrencyState } from "../domain/currency";
 import { isValidAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { isTimeZoneMode, isValidTimeZone } from "../services/TimeZoneService";
@@ -206,12 +207,12 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
   }
   if (value["type"] === "setProvider" && isObject(value["payload"])) {
     const provider = value["payload"]["provider"];
-    if (provider === "all" || provider === "claude" || provider === "codex" || provider === "pi") {
+    if (typeof provider === "string" && (provider === "all" || (supportedProviders as readonly string[]).includes(provider))) {
       return {
         requestId: value["requestId"],
         type: "setProvider",
         version: webviewProtocolVersion,
-        payload: { provider },
+        payload: { provider: provider as UsageProviderFilter },
       };
     }
   }
