@@ -95,3 +95,26 @@ test("source detection finds the grok-cli session database", async () => {
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("grok adapter skips the refresh while a writer holds an open transaction and reads after commit", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const dbPath = path.join(dir, "session.db");
+    await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
+    // A hot rollback journal is what a real sqlite writer leaves beside the
+    // database for the whole transaction; its presence is the signal we key on.
+    await writeFile(`${dbPath}-journal`, Buffer.alloc(512));
+
+    const duringWrite = await new GrokUsageAdapter(dbPath).importUsage();
+    await rm(`${dbPath}-journal`);
+    const afterCommit = await new GrokUsageAdapter(dbPath).importUsage();
+
+    assert.equal(duringWrite.records.length, 0);
+    assert.deepEqual(duringWrite.errors, []);
+    assert.ok(duringWrite.warnings.some((warning) => warning.code === "file_transient"));
+    assert.equal(afterCommit.records.length, 1);
+    assert.deepEqual(afterCommit.warnings, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

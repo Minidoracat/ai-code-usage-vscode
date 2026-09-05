@@ -21,9 +21,21 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     const meta: SourceMeta = { sourcePath: filePath, sourceKind: "sqlite", parserVersion: grokParserVersion, readAt };
     result.sourceMeta.push(meta);
 
+    // An active journal is "unstable", not "unreadable": the attempt yields
+    // undefined so readStable retries once and the refresh then skips the file.
+    const attempt = async (): Promise<SessionEventRow[] | undefined> => {
+      try {
+        return await readSessionEvents(filePath);
+      } catch (error) {
+        if (error instanceof JournalActiveError) {
+          return undefined;
+        }
+        throw error;
+      }
+    };
     let rows: SessionEventRow[] | undefined;
     try {
-      rows = await this.readStable(filePath, () => readSessionEvents(filePath));
+      rows = await this.readStable(filePath, attempt);
     } catch (error) {
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
       return;
@@ -91,8 +103,35 @@ const sessionEventColumns: Array<keyof SessionEventRow> = [
   "cache_write_tokens",
 ];
 
+/**
+ * A hot rollback journal (or WAL) beside the database means a writer is
+ * mid-transaction: the main file may hold spilled, uncommitted pages that
+ * look stable to a size/mtime check. sqlite readers refuse such a file;
+ * so do we, by failing the attempt so readStable retries and then skips.
+ */
+async function assertNoActiveJournal(filePath: string): Promise<void> {
+  for (const suffix of ["-journal", "-wal"]) {
+    try {
+      await fs.access(filePath + suffix);
+      throw new JournalActiveError(suffix);
+    } catch (error) {
+      if (error instanceof JournalActiveError) {
+        throw error;
+      }
+    }
+  }
+}
+
+class JournalActiveError extends Error {
+  public constructor(suffix: string) {
+    super(`SQLite ${suffix} present: database is being written`);
+  }
+}
+
 async function readSessionEvents(filePath: string): Promise<SessionEventRow[]> {
+  await assertNoActiveJournal(filePath);
   const [SQL, bytes] = await Promise.all([loadSqlJs(), fs.readFile(filePath)]);
+  await assertNoActiveJournal(filePath);
   const db = new SQL.Database(bytes);
   try {
     const [table] = db.exec(`select ${sessionEventColumns.join(", ")} from session_events order by started_at`);

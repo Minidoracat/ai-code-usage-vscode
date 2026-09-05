@@ -225,10 +225,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   /**
    * Runs `attempt` with a before/after stat fingerprint check, retrying once
    * after a short delay. Returns undefined when the file was still changing on
-   * both attempts. Read failures propagate to the caller unchanged, so a
+   * both attempts, or when `attempt` itself reported instability by resolving
+   * to undefined. Read failures propagate to the caller unchanged, so a
    * permission error is reported as unreadable rather than transient.
    */
-  protected async readStable<T>(filePath: string, attempt: () => Promise<T>): Promise<T | undefined> {
+  protected async readStable<T>(filePath: string, attempt: () => Promise<T | undefined>): Promise<T | undefined> {
     for (let tries = 0; tries < 2; tries += 1) {
       if (tries > 0) {
         // Give the writer a moment to finish before retrying.
@@ -237,7 +238,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       const before = await statOrUndefined(filePath);
       const value = await attempt();
       const after = await statOrUndefined(filePath);
-      if (statStable(before, after)) {
+      if (value !== undefined && statStable(before, after)) {
         return value;
       }
     }
