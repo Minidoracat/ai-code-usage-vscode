@@ -165,10 +165,14 @@ test("cached importer keeps records when a file becomes unreadable and retries i
     await utimes(usageFile, new Date("2026-05-02T00:00:00.000Z"), new Date("2026-05-02T00:00:00.000Z"));
     adapter.failReads = true;
     const failed = await load();
+    // Retained diagnostics go through the same sanitizer as parsed ones.
+    const indexAfterFailure = await readFile(path.join(fixture.cacheRoot, "index.json"), "utf8");
     adapter.failReads = false;
     const recovered = await load();
 
     assert.equal(warm.imports[0]?.records[0]?.tokens.input, 7);
+    assert.ok(indexAfterFailure.includes("file_unreadable"));
+    assert.equal(indexAfterFailure.includes(fixture.sourceRoot), false);
     // Unreadable: error surfaced, cached records retained.
     assert.ok(failed.imports[0]?.errors.some((error) => error.code === "file_unreadable"));
     assert.equal(failed.imports[0]?.records[0]?.tokens.input, 7);
@@ -176,6 +180,30 @@ test("cached importer keeps records when a file becomes unreadable and retries i
     assert.equal(recovered.imports[0]?.errors.length, 0);
     assert.equal(recovered.imports[0]?.records[0]?.tokens.input, 7);
     assert.equal(adapter.parseCount, 3);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer retries a file whose very first read failed", async () => {
+  const fixture = await createFixture();
+  try {
+    const usageFile = path.join(fixture.sourceRoot, "session.jsonl");
+    await writeClaudeUsage(usageFile, { sessionId: "s", timestamp: "2026-05-01T01:00:00.000Z", inputTokens: 3, outputTokens: 1 });
+    const adapter = new FlakyClaudeAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    const load = () => importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range });
+
+    adapter.failReads = true;
+    const failed = await load();
+    adapter.failReads = false;
+    const recovered = await load();
+
+    assert.ok(failed.imports[0]?.errors.some((error) => error.code === "file_unreadable"));
+    assert.equal(failed.imports[0]?.records.length, 0);
+    assert.equal(recovered.imports[0]?.errors.length, 0);
+    assert.equal(recovered.imports[0]?.records[0]?.tokens.input, 3);
   } finally {
     await fixture.dispose();
   }

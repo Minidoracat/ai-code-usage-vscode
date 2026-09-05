@@ -315,7 +315,11 @@ export class CachedUsageImporter {
         // evicting its records, but surface this refresh's diagnostics.
         index.files[fileKey] = {
           ...cached,
-          diagnostics: { ...cached.diagnostics, warnings: outcome.result.warnings, errors: outcome.result.errors },
+          diagnostics: {
+            ...cached.diagnostics,
+            warnings: outcome.result.warnings.map((warning) => sanitizeIssueForCache(warning, sourceFileId)),
+            errors: outcome.result.errors.map((error) => sanitizeIssueForCache(error, sourceFileId)),
+          },
         };
         session.dirty = true;
         continue;
