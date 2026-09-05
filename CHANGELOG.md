@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending release
+
+### Added
+
+- Claude Opus 5 pricing, matching `claude-opus-5`, `Claude Opus 5`, and `claude-opus-5[1m]`, with base, cache-write, and cache-read rates.
+
 ## 0.1.6 - 2026-07-10
 
 ### Added
