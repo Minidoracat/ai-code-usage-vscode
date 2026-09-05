@@ -2,7 +2,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AdapterImportResult, ImportIssue, SourceMeta, UsageRecord } from "../domain/types";
-import { JsonUsageAdapter } from "./JsonUsageAdapter";
+import { JsonUsageAdapter, type UsageFileListResult } from "./JsonUsageAdapter";
 
 /**
  * grok-cli keeps local usage accounting in `~/.grok-cli/session.db` (SQLite,
@@ -16,6 +16,28 @@ import { JsonUsageAdapter } from "./JsonUsageAdapter";
  */
 export class GrokUsageAdapter extends JsonUsageAdapter {
   public override readonly provider = "grok" as const;
+
+  /**
+   * The cache reuses a file while its size/mtime are unchanged, but a
+   * `-journal` / `-wal` appearing or disappearing beside the database changes
+   * what we can read without touching the main file. Fold their sizes into
+   * the fingerprint so those transitions trigger a reparse.
+   */
+  public override async listUsageFiles(options?: { usagePath?: string }): Promise<UsageFileListResult> {
+    const listed = await super.listUsageFiles(options);
+    for (const file of listed.files) {
+      for (const suffix of ["-journal", "-wal"]) {
+        try {
+          const sidecar = await fs.stat(file.filePath + suffix);
+          file.size += sidecar.size + 1;
+          file.mtimeMs = Math.max(file.mtimeMs, sidecar.mtimeMs);
+        } catch {
+          // no sidecar
+        }
+      }
+    }
+    return listed;
+  }
 
   protected override async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
     const meta: SourceMeta = { sourcePath: filePath, sourceKind: "sqlite", parserVersion: grokParserVersion, readAt };

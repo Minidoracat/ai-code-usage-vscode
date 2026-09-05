@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { GrokUsageAdapter } from "../src/adapters/GrokUsageAdapter";
+import { CachedUsageImporter } from "../src/services/CachedUsageImporter";
 import { PricingService } from "../src/services/PricingService";
 import { SourceDetectionService } from "../src/services/SourceDetectionService";
 import { UsageAggregator } from "../src/services/UsageAggregator";
@@ -131,6 +132,31 @@ test("grok adapter reports a WAL-mode database instead of retrying it forever", 
     assert.equal(result.records.length, 0);
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.warnings.map((warning) => warning.code), ["wal_unsupported"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("cached importer keeps grok records while the database is in WAL mode and rereads after checkpoint", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const dbPath = path.join(dir, "session.db");
+    await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
+    const importer = new CachedUsageImporter(path.join(dir, "cache"));
+    const range = new TimeRangeService(() => new Date("2026-09-01T23:00:00.000Z"), resolveTimeZone("utc")).resolve("today");
+    const load = () => importer.loadForRange({ sources: [{ provider: "grok", sourcePath: dbPath, adapter: new GrokUsageAdapter(dbPath) }], range });
+
+    const warm = await load();
+    await writeFile(`${dbPath}-wal`, Buffer.alloc(32));
+    const duringWal = await load();
+    await rm(`${dbPath}-wal`);
+    const afterCheckpoint = await load(); // same size/mtime as before
+
+    assert.equal(warm.imports[0]?.records.length, 1);
+    assert.equal(duringWal.imports[0]?.records.length, 1, "cached records survive a WAL refresh");
+    assert.ok(duringWal.imports[0]?.warnings.some((warning) => warning.code === "wal_unsupported"));
+    assert.equal(afterCheckpoint.imports[0]?.records.length, 1);
+    assert.equal(afterCheckpoint.imports[0]?.warnings.some((warning) => warning.code === "wal_unsupported"), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

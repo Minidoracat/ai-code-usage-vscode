@@ -288,10 +288,7 @@ export class CachedUsageImporter {
       // A cached read failure is never "up to date": retry it on every refresh
       // even when size/mtime did not move (a fixed permission bit does not
       // bump either).
-      const cachedReadFailed = Boolean(cached && (
-        cached.diagnostics.warnings.some((item) => item.code === "file_transient")
-        || cached.diagnostics.errors.some((item) => item.code === "file_unreadable")
-      ));
+      const cachedReadFailed = Boolean(cached && readFailed(cached.diagnostics));
       const fingerprintUnchanged = Boolean(cached && !cachedReadFailed && cached.mtimeMs === file.mtimeMs && cached.size === file.size);
       if (!forceReparse && shouldSkipFileForRange(source.provider, file, cached, fingerprintUnchanged, range)) {
         skippedHistoricalFiles += 1;
@@ -307,9 +304,7 @@ export class CachedUsageImporter {
       await report({ status: forceReparse ? "rebuilding" : "cold", rangeComplete: false });
       const resumablePrior = !forceReparse && cached && file.size > cached.size ? cached.parseState : undefined;
       const outcome = await source.adapter.importUsageFileWithState(file.filePath, resumablePrior);
-      const readFailed = outcome.result.warnings.some((item) => item.code === "file_transient")
-        || outcome.result.errors.some((item) => item.code === "file_unreadable");
-      if (readFailed && cached) {
+      if (readFailed(outcome.result) && cached) {
         // The file was still changing or could not be read: keep the cached
         // records and fingerprint so the next refresh retries it instead of
         // evicting its records, but surface this refresh's diagnostics.
@@ -689,6 +684,16 @@ export class CachedUsageImporter {
   private shardPath(provider: UsageProvider, shardKey: string): string {
     return path.join(this.cacheRootPath, "records", provider, `${shardKey}.json`);
   }
+}
+
+/**
+ * True when a parse produced no trustworthy snapshot of the file (still being
+ * written, unreadable, or in a state the adapter cannot read yet). Such
+ * results must not replace cached records and must be retried next refresh.
+ */
+function readFailed(result: Pick<AdapterImportResult, "warnings" | "errors">): boolean {
+  return result.warnings.some((item) => item.code === "file_transient" || item.code === "wal_unsupported")
+    || result.errors.some((item) => item.code === "file_unreadable");
 }
 
 function diagnosticsForActiveRoot(index: CacheIndex, provider: UsageProvider, sourceRootId: string): Pick<AdapterImportResult, "warnings" | "errors" | "sourceMeta"> {
