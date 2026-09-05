@@ -224,10 +224,8 @@
     "@vscode/vsce": "^3.6.4",
     "esbuild": "^0.28.0",
     "preact": "^10.29.1",
+    "sql.js": "^1.14.2",
     "typescript": "^5.9.0",
     "uplot": "^1.6.32"
-  },
-  "dependencies": {
-    "sql.js": "^1.14.2"
   }
 }

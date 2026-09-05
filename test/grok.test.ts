@@ -30,19 +30,19 @@ async function writeSessionDb(filePath: string, events: Array<Record<string, str
   await writeFile(filePath, db.export());
 }
 
-const textEvent = (id: string, session: string, at: string, tokens: { input: number; output: number; cached?: number }, microUsd: number) => ({
+const textEvent = (id: string, session: string, at: string, tokens: { input: number; output: number; cached?: number }) => ({
   event_id: id, session_id: session, command: "chat", provider: "xai-oauth", model: "grok-4.6",
   started_at: at, completed_at: at, duration_ms: 1000,
-  input_tokens: tokens.input, output_tokens: tokens.output, cache_read_tokens: tokens.cached ?? 0, estimated_cost_micro_usd: microUsd,
+  input_tokens: tokens.input, output_tokens: tokens.output, cache_read_tokens: tokens.cached ?? 0,
 });
 
-test("grok adapter imports grok-cli session events with billed cost and skips media-only events", async () => {
+test("grok adapter imports grok-cli session events and skips media-only events", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
   try {
     const dbPath = path.join(dir, "session.db");
     await writeSessionDb(dbPath, [
-      textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 1000, output: 200, cached: 500 }, 4_250),
-      textEvent("e2", "sess_b", "2026-09-01T11:00:00.000Z", { input: 100, output: 10 }, 260),
+      textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 1000, output: 200, cached: 500 }),
+      textEvent("e2", "sess_b", "2026-09-01T11:00:00.000Z", { input: 100, output: 10 }),
       { event_id: "e3", session_id: "sess_a", command: "image", provider: "xai-oauth", model: "grok-imagine-image", started_at: "2026-09-01T12:00:00.000Z", completed_at: "2026-09-01T12:00:01.000Z", duration_ms: 1000 },
     ]);
 
@@ -56,7 +56,7 @@ test("grok adapter imports grok-cli session events with billed cost and skips me
     assert.equal(first?.model, "grok-4.6");
     assert.equal(first?.sessionId, "sess_a");
     assert.deepEqual(first?.tokens, { input: 1000, output: 200, cacheRead: 500 });
-    assert.deepEqual(first?.cost, { amount: 0.00425, currency: "USD", source: "imported" });
+    assert.equal(first?.cost, undefined); // grok-cli only stores its own estimate; the catalog prices these
     assert.equal(second?.sessionId, "sess_b");
     assert.ok(result.warnings.some((warning) => warning.code === "no_token_usage"));
   } finally {
@@ -64,11 +64,11 @@ test("grok adapter imports grok-cli session events with billed cost and skips me
   }
 });
 
-test("grok records aggregate as their own provider and price with the xAI catalog when no cost is recorded", async () => {
+test("grok records aggregate as their own provider and price with the xAI catalog", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
   try {
     const dbPath = path.join(dir, "session.db");
-    await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 100_000, output: 0 }, 0)]);
+    await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 100_000, output: 0 })]);
     const imported = await new GrokUsageAdapter(dbPath).importUsage();
     const catalog = JSON.parse(await readFile(path.join(process.cwd(), "src/pricing/catalog.json"), "utf8")) as PricingCatalog;
     const range = new TimeRangeService(() => new Date("2026-09-01T23:00:00.000Z"), resolveTimeZone("utc")).resolve("today");

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `grok` provider for grok-cli: reads `~/.grok-cli/session.db` (SQLite via the bundled sql.js wasm runtime, no native modules) and imports every text request with its token counts and estimated cost; auto-detected, configurable via `aiCodingUsage.grok.usagePath`.
+- `grok` provider for grok-cli: reads `~/.grok-cli/session.db` (SQLite via the bundled sql.js wasm runtime, no native modules) and imports every text request with its token counts; cost comes from the xAI catalog rules rather than grok-cli's own estimate. Auto-detected, configurable via `aiCodingUsage.grok.usagePath`.
 - xAI Grok pricing (grok-4.6 / 4.5 / 4.3 / 4.20 / build-0.1) with the 200K long-context tier, used for grok-cli records without a recorded cost and for pi transcripts that ran Grok models.
 
 ### Changed

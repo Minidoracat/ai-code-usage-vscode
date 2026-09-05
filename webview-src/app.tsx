@@ -2604,19 +2604,7 @@ function getCssColor(name: string, fallback: string): string {
 }
 
 function providerColor(provider: UsageProviderFilter): string {
-  if (provider === "claude") {
-    return getCssColor("--provider-claude", "#d97757");
-  }
-  if (provider === "codex") {
-    return getCssColor("--provider-codex", "#10a37f");
-  }
-  if (provider === "pi") {
-    return getCssColor("--provider-pi", "#3b82f6");
-  }
-  if (provider === "grok") {
-    return getCssColor("--provider-grok", "#a855f7");
-  }
-  return getCssColor("--vscode-charts-blue", "#3794ff");
+  return provider === "all" ? getCssColor("--vscode-charts-blue", "#3794ff") : getCssColor(`--provider-${provider}`, "#3794ff");
 }
 
 function withAlpha(color: string, alpha: number): string {

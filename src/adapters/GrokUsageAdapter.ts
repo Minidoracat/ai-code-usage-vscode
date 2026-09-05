@@ -6,10 +6,13 @@ import { JsonUsageAdapter } from "./JsonUsageAdapter";
 
 /**
  * grok-cli keeps local usage accounting in `~/.grok-cli/session.db` (SQLite,
- * table `session_events`: one row per request with model, token counts and
- * an estimated cost in micro-USD). The database is read through sql.js
- * (wasm, no native module) from an in-memory copy, so the CLI can keep
- * writing while we import.
+ * rollback-journal mode, table `session_events`: one row per request with
+ * model and token counts). The file is copied into memory and opened with
+ * sql.js (wasm, no native module). A copy taken mid-transaction could mix old
+ * and new pages, so the read goes through the same before/after fingerprint
+ * check as JSON sources and is skipped for this refresh if the file moved.
+ * grok-cli's `estimated_cost_micro_usd` is its own bundled-table estimate,
+ * not a bill, so it is ignored in favour of the catalog's xAI rules.
  */
 export class GrokUsageAdapter extends JsonUsageAdapter {
   public override readonly provider = "grok" as const;
@@ -18,11 +21,15 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     const meta: SourceMeta = { sourcePath: filePath, sourceKind: "sqlite", parserVersion: grokParserVersion, readAt };
     result.sourceMeta.push(meta);
 
-    let rows: SessionEventRow[];
+    let rows: SessionEventRow[] | undefined;
     try {
-      rows = await readSessionEvents(filePath);
+      rows = await this.readStable(filePath, () => readSessionEvents(filePath));
     } catch (error) {
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
+      return;
+    }
+    if (rows === undefined) {
+      result.warnings.push(issue("warning", "file_transient", "grok-cli session database changed while reading; skipped for this refresh.", filePath));
       return;
     }
     if (rows.length === 0) {
@@ -36,9 +43,8 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       if (row.output_tokens > 0) tokens.output = row.output_tokens;
       if (row.cache_read_tokens > 0) tokens.cacheRead = row.cache_read_tokens;
       if (row.cache_write_tokens > 0) tokens.cacheWrite5m = row.cache_write_tokens;
-      const costUsd = row.estimated_cost_micro_usd / 1_000_000;
-      if (Object.keys(tokens).length === 0 && costUsd === 0) {
-        skipped += 1; // image/video/audio events carry no token usage and no cost
+      if (Object.keys(tokens).length === 0) {
+        skipped += 1; // image/video/audio events carry no token usage
         continue;
       }
       result.records.push({
@@ -49,13 +55,12 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         endedAt: row.completed_at,
         observedAt: row.completed_at,
         tokens,
-        cost: costUsd > 0 ? { amount: costUsd, currency: "USD", source: "imported" } : undefined,
         source: meta,
         raw: row,
       });
     }
     if (skipped > 0) {
-      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events (image/video/audio) carry no token usage or cost and were skipped.`, filePath));
+      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events (image/video/audio) carry no token usage and were skipped.`, filePath));
     }
   }
 }
@@ -72,7 +77,6 @@ type SessionEventRow = {
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
-  estimated_cost_micro_usd: number;
 };
 
 const sessionEventColumns: Array<keyof SessionEventRow> = [
@@ -85,7 +89,6 @@ const sessionEventColumns: Array<keyof SessionEventRow> = [
   "output_tokens",
   "cache_read_tokens",
   "cache_write_tokens",
-  "estimated_cost_micro_usd",
 ];
 
 async function readSessionEvents(filePath: string): Promise<SessionEventRow[]> {
@@ -111,7 +114,6 @@ async function readSessionEvents(filePath: string): Promise<SessionEventRow[]> {
         output_tokens: Number(row["output_tokens"] ?? 0),
         cache_read_tokens: Number(row["cache_read_tokens"] ?? 0),
         cache_write_tokens: Number(row["cache_write_tokens"] ?? 0),
-        estimated_cost_micro_usd: Number(row["estimated_cost_micro_usd"] ?? 0),
       };
     });
   } finally {

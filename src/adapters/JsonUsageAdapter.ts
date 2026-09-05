@@ -228,7 +228,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
    * both attempts. Read failures propagate to the caller unchanged, so a
    * permission error is reported as unreadable rather than transient.
    */
-  private async readStable<T>(filePath: string, attempt: () => Promise<T>): Promise<T | undefined> {
+  protected async readStable<T>(filePath: string, attempt: () => Promise<T>): Promise<T | undefined> {
     for (let tries = 0; tries < 2; tries += 1) {
       if (tries > 0) {
         // Give the writer a moment to finish before retrying.
