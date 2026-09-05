@@ -14,8 +14,8 @@
   --provider-claude-soft: rgba(217, 119, 87, 0.16);
   --provider-codex: #10a37f;
   --provider-codex-soft: rgba(16, 163, 127, 0.16);
-  --provider-opencode: #3b82f6;
-  --provider-opencode-soft: rgba(59, 130, 246, 0.16);
+  --provider-pi: #3b82f6;
+  --provider-pi-soft: rgba(59, 130, 246, 0.16);
 }
 
 body {
@@ -430,9 +430,9 @@ h2 {
   box-shadow: inset 0 0 0 1px var(--provider-codex);
 }
 
-.provider-filter-button.provider-opencode.active {
-  background: var(--provider-opencode-soft);
-  box-shadow: inset 0 0 0 1px var(--provider-opencode);
+.provider-filter-button.provider-pi.active {
+  background: var(--provider-pi-soft);
+  box-shadow: inset 0 0 0 1px var(--provider-pi);
 }
 
 .busy-strip {
@@ -683,8 +683,8 @@ h2 {
   background: var(--provider-codex);
 }
 
-.provider-opencode .bar i {
-  background: var(--provider-opencode);
+.provider-pi .bar i {
+  background: var(--provider-pi);
 }
 
 .model-usage-panel {
@@ -714,8 +714,8 @@ h2 {
   background: color-mix(in srgb, var(--surface) 90%, var(--provider-codex) 10%);
 }
 
-.model-usage-card.provider-opencode {
-  background: color-mix(in srgb, var(--surface) 90%, var(--provider-opencode) 10%);
+.model-usage-card.provider-pi {
+  background: color-mix(in srgb, var(--surface) 90%, var(--provider-pi) 10%);
 }
 
 .model-title-stack {
@@ -748,8 +748,8 @@ h2 {
   color: var(--provider-codex);
 }
 
-.model-usage-card.provider-opencode .model-usage-header strong {
-  color: var(--provider-opencode);
+.model-usage-card.provider-pi .model-usage-header strong {
+  color: var(--provider-pi);
 }
 
 .pricing-summary {
@@ -967,8 +967,8 @@ h2 {
   border-color: color-mix(in srgb, var(--provider-codex) 42%, var(--border));
 }
 
-.pricing-rule-card.provider-opencode {
-  border-color: color-mix(in srgb, var(--provider-opencode) 42%, var(--border));
+.pricing-rule-card.provider-pi {
+  border-color: color-mix(in srgb, var(--provider-pi) 42%, var(--border));
 }
 
 .pricing-rule-header {
@@ -1000,8 +1000,8 @@ h2 {
   color: var(--provider-codex);
 }
 
-.pricing-rule-card.provider-opencode .pricing-rule-header strong {
-  color: var(--provider-opencode);
+.pricing-rule-card.provider-pi .pricing-rule-header strong {
+  color: var(--provider-pi);
 }
 
 .pricing-rule-header > span {
@@ -1090,8 +1090,8 @@ h2 {
   background: var(--provider-codex);
 }
 
-.provider-badge.provider-opencode i {
-  background: var(--provider-opencode);
+.provider-badge.provider-pi i {
+  background: var(--provider-pi);
 }
 
 .table-wrap {
@@ -1183,8 +1183,8 @@ td.numeric {
   border-left-color: var(--provider-codex);
 }
 
-.issue-list p.provider-opencode {
-  border-left-color: var(--provider-opencode);
+.issue-list p.provider-pi {
+  border-left-color: var(--provider-pi);
 }
 
 .issue-list strong {
@@ -1333,8 +1333,8 @@ td.numeric {
   border-left-color: var(--provider-codex);
 }
 
-.loading-source.opencode {
-  border-left-color: var(--provider-opencode);
+.loading-source.pi {
+  border-left-color: var(--provider-pi);
 }
 
 .loading-source.invalid {

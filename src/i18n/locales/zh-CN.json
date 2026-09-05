@@ -169,7 +169,7 @@
   "currency.source.manual": "手动汇率",
   "currency.source.public": "公开汇率",
   "currency.source.default": "默认",
-  "currency.missingRate": "所选货币尚无汇率，先以 USD 显示；请更新公开汇率或手动输入。",
+  "currency.missingRate": "所选货币尚无汇率，先以 USD 显示；请更新公开汇率，或在 `aiCodingUsage.exchangeRates` 设置中指定。",
   "currency.quickLabel": "常用",
   "currency.applied": "显示币种已切换为 {code}",
   "currency.codePlaceholder": "币种代码（如 USD、CNY）"

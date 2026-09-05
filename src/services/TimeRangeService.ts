@@ -1,6 +1,7 @@
 import type { TimeRange, TimeRangeKind, TimeZoneState } from "../domain/types";
 import {
   addDateKeyDays,
+  isValidDateHourKey,
   normalizeDateKey,
   resolveTimeZone,
   startOfMonthDateKey,
@@ -66,8 +67,8 @@ export class TimeRangeService {
   private fromCustomKeys(custom?: { start?: string; end?: string }): TimeRange {
     const zone = this.timeZone.resolvedTimeZone;
     const today = zonedDateKey(this.clock(), zone);
-    const startHourKey = isCustomHourKey(custom?.start);
-    const endHourKey = isCustomHourKey(custom?.end);
+    const startHourKey = isValidDateHourKey(custom?.start);
+    const endHourKey = isValidDateHourKey(custom?.end);
     const startDateKey = normalizeDateKey(custom?.start, zone) ?? today;
     const endDateKey = normalizeDateKey(custom?.end, zone) ?? today;
     const start = startHourKey
@@ -109,6 +110,3 @@ export function isWithinRange(iso: string | undefined, range: TimeRange): boolea
   return value >= new Date(range.start).getTime() && value <= new Date(range.end).getTime();
 }
 
-function isCustomHourKey(value: string | undefined): boolean {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}$/.test(value);
-}

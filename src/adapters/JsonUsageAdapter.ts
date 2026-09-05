@@ -270,10 +270,10 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   private async readJsonLinesStreaming(filePath: string, meta: SourceMeta, result: AdapterImportResult): Promise<void> {
     // Streaming reads can also tear on files written concurrently (e.g. codex
     // compaction rewriting a rollout in place). Parse into a local buffer
-    // first, compare pre/post-read stats, retry once when the file is
-    // unstable, and downgrade line-level parse errors to a transient warning
-    // when the file is still being written - so torn reads never persist
-    // stale malformed_jsonl diagnostics into the cache.
+    // first and compare pre/post-read stats after every attempt: an unstable
+    // fingerprint means the snapshot may be partial even when every line
+    // parsed, so retry once and otherwise skip the file entirely - no records,
+    // no diagnostics - so torn reads never land in the cache.
     type Attempt = { rows: Array<{ line: number; row: unknown }>; errors: ImportIssue[]; sawContent: boolean };
     const attempt = async (): Promise<Attempt> => {
       const rows: Array<{ line: number; row: unknown }> = [];
@@ -296,33 +296,32 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
       return { rows, errors, sawContent };
     };
 
-    let out: Attempt;
-    let before = await statOrUndefined(filePath);
-    try {
-      out = await attempt();
-    } catch (error) {
-      result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
-      return;
-    }
-    let after = await statOrUndefined(filePath);
-    if (out.errors.length > 0 && !statStable(before, after)) {
-      // The file changed mid-read and lines failed to parse: retry once after
-      // a short delay to let the writer finish the line.
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      before = await statOrUndefined(filePath);
+    let out: Attempt | undefined;
+    for (let tries = 0; tries < 2; tries += 1) {
+      if (tries > 0) {
+        // Give the writer a moment to finish the record before retrying.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      const before = await statOrUndefined(filePath);
+      let candidate: Attempt;
       try {
-        out = await attempt();
+        candidate = await attempt();
       } catch (error) {
         result.errors.push(issue("error", "file_unreadable", errorMessage(error), filePath, this.provider));
         return;
       }
-      after = await statOrUndefined(filePath);
-      if (out.errors.length > 0 && !statStable(before, after)) {
-        // Still being written: treat as transient, skip diagnostics so the
-        // next refresh (with a changed fingerprint) reparses cleanly.
-        result.warnings.push(issue("warning", "file_transient", "Usage file is being written while imported; skipping diagnostics for this refresh.", filePath, this.provider));
-        out.errors = [];
+      const after = await statOrUndefined(filePath);
+      if (statStable(before, after)) {
+        out = candidate;
+        break;
       }
+    }
+    if (!out) {
+      // Still being written: treat as transient and skip both records and
+      // diagnostics so the next refresh (with a changed fingerprint) reparses
+      // the completed file cleanly.
+      result.warnings.push(issue("warning", "file_transient", "Usage file is being written while imported; skipping diagnostics for this refresh.", filePath, this.provider));
+      return;
     }
     result.errors.push(...out.errors);
 
@@ -495,7 +494,7 @@ function normalizeCost(object: Record<string, unknown>) {
       source: "imported" as const,
     };
   }
-  // pi/opencode-go session records carry their real billed cost as
+  // pi agent session records (omp, pi CLI, vscode-pi) carry their real billed cost as
   // message.usage.cost.{total,currency}. Prefer the imported total so the
   // dashboard shows what the subscription actually billed.
   const usageCost = objectAt(object, "message.usage.cost");

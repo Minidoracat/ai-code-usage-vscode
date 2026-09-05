@@ -1,4 +1,4 @@
-export const supportedProviders = ["claude", "codex", "opencode"] as const;
+export const supportedProviders = ["claude", "codex", "pi"] as const;
 
 export type UsageProvider = (typeof supportedProviders)[number];
 

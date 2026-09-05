@@ -39,6 +39,39 @@ test("source detection ignores POSIX home roots on Windows", () => {
   assert.ok(candidates.every((source) => source.sourcePath.startsWith("C:\\Users\\FixtureUser\\")));
 });
 
+test("pi candidates prefer PI_CODING_AGENT_DIR, then omp, pi CLI, and vscode-pi storage, without duplicates", () => {
+  const env = { HOME: "/home/u", PI_CODING_AGENT_DIR: "/home/u/.omp/agent" };
+  const pi = usageSourceCandidates("/home/u", env, "linux", "/home/u/.config/Code/User/globalStorage")
+    .filter((source) => source.provider === "pi")
+    .map((source) => source.sourcePath);
+
+  assert.deepEqual(pi, [
+    "/home/u/.omp/agent/sessions",
+    "/home/u/.pi/agent/sessions",
+    "/home/u/.config/Code/User/globalStorage/cdervis.vscode-pi/bundled-pi-agent/sessions",
+  ]);
+});
+
+test("source detection keeps only the first existing pi root", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "ai-code-usage-home-"));
+  try {
+    for (const root of [".omp", ".pi"]) {
+      const dir = path.join(home, root, "agent", "sessions", "proj");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "session.jsonl"), "{}\n");
+    }
+
+    const detected = await new SourceDetectionService(home, {}).detect();
+
+    assert.deepEqual(
+      detected.filter((source) => source.provider === "pi").map((source) => source.sourcePath),
+      [path.join(home, ".omp", "agent", "sessions")],
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("native usage path validation rejects cross-platform synced paths", () => {
   assert.equal(isNativeUsagePath("/posix-fixture-home/.claude/projects", "win32"), false);
   assert.equal(isNativeUsagePath("C:\\Users\\FixtureUser\\.codex\\sessions", "win32"), true);

@@ -79,7 +79,7 @@ export class UsageAggregator {
   }
 
   private buildProviderSplit(records: UsageRecord[]): UsageSummary["providerSplit"] {
-    const providers: UsageProvider[] = ["claude", "codex", "opencode"];
+    const providers: UsageProvider[] = ["claude", "codex", "pi"];
     return providers.map((provider) => {
       const providerRecords = records.filter((record) => record.provider === provider);
       return {
@@ -132,8 +132,14 @@ export class UsageAggregator {
       pushGroup(groups, bucket, record);
     }
 
+    // Hour keys carry their UTC offset, so a DST fall-back yields two buckets
+    // with the same wall-clock hour; compare instants, not text, to order them.
     return [...groups.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) =>
+        hourGranularity
+          ? Date.parse(`${a.slice(0, 13)}:00:00${a.slice(13)}`) - Date.parse(`${b.slice(0, 13)}:00:00${b.slice(13)}`)
+          : a.localeCompare(b),
+      )
       .map(([bucket, groupRecords]) => ({
         bucket,
         records: groupRecords.length,

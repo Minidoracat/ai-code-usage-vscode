@@ -169,7 +169,7 @@
   "currency.source.manual": "manual rate",
   "currency.source.public": "public rate",
   "currency.source.default": "default",
-  "currency.missingRate": "No rate for the selected currency yet; showing USD. Update public rates or enter one manually.",
+  "currency.missingRate": "No rate for the selected currency yet; showing USD. Update public rates, or set one in the `aiCodingUsage.exchangeRates` setting.",
   "currency.quickLabel": "Quick",
   "currency.applied": "Display currency switched to {code}",
   "currency.codePlaceholder": "Currency code (e.g. USD, CNY)"

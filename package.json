@@ -105,10 +105,10 @@
           "default": "",
           "markdownDescription": "%configuration.codexUsagePath.description%"
         },
-        "aiCodingUsage.opencode.usagePath": {
+        "aiCodingUsage.pi.usagePath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "%configuration.opencodeUsagePath.description%"
+          "markdownDescription": "%configuration.piUsagePath.description%"
         },
         "aiCodingUsage.defaultRange": {
           "type": "string",

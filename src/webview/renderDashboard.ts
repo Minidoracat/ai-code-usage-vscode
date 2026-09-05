@@ -38,7 +38,7 @@ function createInitialLoadingState(): DashboardLoadingState {
   const localePreference = localePreferenceFromConfig(config);
   const locale = normalizeLocale(localePreference === "auto" ? vscode.env.language : localePreference);
   const candidates = usageSourceCandidates();
-  const sources = (["claude", "codex", "opencode"] as const).map((provider) => {
+  const sources = (["claude", "codex", "pi"] as const).map((provider) => {
     const configuredPath = config.get<string>(`${provider}.usagePath`, "").trim();
     if (configuredPath && !isNativeUsagePath(configuredPath)) {
       return { provider, status: "invalid" as const, path: configuredPath };

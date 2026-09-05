@@ -116,7 +116,7 @@ test("trend buckets use selected time zone date keys", () => {
   ], range);
 
   assert.equal(summary.totals.records, 1);
-  assert.equal(summary.trend[0]?.bucket, "2026-05-01T01"); // today is hourly now
+  assert.equal(summary.trend[0]?.bucket, "2026-05-01T01+08:00"); // today is hourly now
 });
 
 test("empty input returns zero totals", () => {

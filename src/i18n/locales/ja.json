@@ -169,7 +169,7 @@
   "currency.source.manual": "手動レート",
   "currency.source.public": "公開レート",
   "currency.source.default": "既定",
-  "currency.missingRate": "選択した通貨のレートがまだありません。USD で表示中です。公開レートを更新するか手動で入力してください。",
+  "currency.missingRate": "選択した通貨のレートがまだありません。USD で表示中です。公開レートを更新するか、設定 `aiCodingUsage.exchangeRates` でレートを指定してください。",
   "currency.quickLabel": "よく使う",
   "currency.applied": "表示通貨を {code} に切り替えました",
   "currency.codePlaceholder": "通貨コード（例: USD、CNY）"

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
-import { OpenCodeUsageAdapter } from "../adapters/OpenCodeUsageAdapter";
+import { PiUsageAdapter } from "../adapters/PiUsageAdapter";
 import { tokenTotal } from "../domain/math";
 import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
@@ -88,10 +88,13 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
         if (
           event.affectsConfiguration("aiCodingUsage.claude.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.codex.usagePath") ||
-          event.affectsConfiguration("aiCodingUsage.opencode.usagePath") ||
+          event.affectsConfiguration("aiCodingUsage.pi.usagePath") ||
           event.affectsConfiguration("aiCodingUsage.autoDetectLocalSources")
         ) {
           this.resetSourceState();
+          if (this.suppressConfigRefresh === 0) {
+            void this.refresh({ allowSourcePrompt: false });
+          }
         }
         if (event.affectsConfiguration("aiCodingUsage.autoRefreshIntervalSeconds")) {
           this.configureAutoRefresh();
@@ -305,20 +308,6 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       try {
         await this.updateConfigSuppressed(async (config) => {
           await config.update("displayCurrency", request.payload.code, vscode.ConfigurationTarget.Global);
-          const rates = { ...config.get<Record<string, number>>("exchangeRates", {}) };
-          if (typeof request.payload.rate === "number") {
-            rates[request.payload.code] = request.payload.rate;
-            await config.update("exchangeRates", rates, vscode.ConfigurationTarget.Global);
-            return;
-          }
-          // Empty-rate apply clears any manual entry so public rates take over.
-          const staleKeys = Object.keys(rates).filter((key) => key.trim().toUpperCase() === request.payload.code);
-          if (staleKeys.length > 0) {
-            for (const key of staleKeys) {
-              delete rates[key];
-            }
-            await config.update("exchangeRates", rates, vscode.ConfigurationTarget.Global);
-          }
         });
       } catch (error) {
         await this.postError(error instanceof Error ? error.message : String(error), "config_write_failed", request.requestId, webview);
@@ -613,7 +602,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
   private loadingSources() {
     const config = vscode.workspace.getConfiguration("aiCodingUsage");
-    const candidates = usageSourceCandidates();
+    const candidates = usageSourceCandidates(undefined, undefined, undefined, this.globalStorageRoot());
     return this.configuredUsagePaths(config).map((source) => {
       if (source.issue) {
         return {
@@ -702,7 +691,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const detected = (await new SourceDetectionService().detect()).filter(
+    const detected = (await new SourceDetectionService(undefined, undefined, undefined, this.globalStorageRoot()).detect()).filter(
       (source) => missingProviders.includes(source.provider),
     );
     if (detected.length === 0) {
@@ -721,8 +710,13 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     vscode.window.setStatusBarMessage(this.t("status.sourcesApplied", { summary }), 4000);
   }
 
+  /** VS Code's shared `User/globalStorage` directory: parent of this extension's own storage. */
+  private globalStorageRoot(): string {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, "..").fsPath;
+  }
+
   private configuredUsagePaths(config: vscode.WorkspaceConfiguration): ConfiguredUsagePath[] {
-    return (["claude", "codex", "opencode"] as const).map((provider) => this.configuredUsagePath(config, provider));
+    return (["claude", "codex", "pi"] as const).map((provider) => this.configuredUsagePath(config, provider));
   }
 
   private configuredUsagePath(config: vscode.WorkspaceConfiguration, provider: UsageProvider): ConfiguredUsagePath {
@@ -793,7 +787,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       notNow,
     );
     if (selected === chooseFolders) {
-      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex", "opencode"]);
+      await this.chooseUsageFolders(vscode.workspace.getConfiguration("aiCodingUsage"), ["claude", "codex", "pi"]);
       void this.refresh({ allowSourcePrompt: true });
     } else if (selected === openSettings) {
       await vscode.commands.executeCommand("workbench.action.openSettings", "aiCodingUsage");
@@ -907,13 +901,13 @@ function requestIdFrom(message: unknown): string {
   return "unknown";
 }
 
-/** Builds the adapter matching a provider (claude/codex/opencode). */
-function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): ClaudeUsageAdapter | CodexUsageAdapter | OpenCodeUsageAdapter {
+/** Builds the adapter matching a provider (claude/codex/pi). */
+function usageAdapterForProvider(provider: UsageProvider, sourcePath?: string): ClaudeUsageAdapter | CodexUsageAdapter | PiUsageAdapter {
   switch (provider) {
     case "codex":
       return new CodexUsageAdapter(sourcePath);
-    case "opencode":
-      return new OpenCodeUsageAdapter(sourcePath);
+    case "pi":
+      return new PiUsageAdapter(sourcePath);
     case "claude":
     default:
       return new ClaudeUsageAdapter(sourcePath);

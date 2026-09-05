@@ -42,7 +42,7 @@ const pendingWatchdogMs = 45_000;
 const loadingActivityWindowMs = 3_000;
 const minimumCustomDate = "2000-01-01";
 const ranges: readonly TimeRangeKind[] = timeRangeKinds;
-const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex", "opencode"];
+const providerFilters: UsageProviderFilter[] = ["all", "claude", "codex", "pi"];
 const localePreferences: DashboardLocalePreference[] = ["auto", "en", "zh-TW", "zh-CN", "ja", "ko"];
 const timeZoneModes: Array<Exclude<TimeZoneMode, "custom">> = ["system", "utc"];
 const chartMetrics = ["cost", "input", "output", "cacheWrite", "cacheRead", "records"] as const;
@@ -1157,7 +1157,7 @@ function TrendChart(props: { summary: UsageSummary; metric: ChartMetric; locale:
               ticks.map((tick) =>
                 (props.summary.trendGranularity ?? "day") === "hour"
                   ? formatShortHour(tick, props.locale, props.summary.range.timeZone.resolvedTimeZone)
-                  : formatShortDate(tick, props.locale),
+                  : formatShortDate(tick, props.locale, props.summary.range.timeZone.resolvedTimeZone),
               ),
           },
           {
@@ -1368,11 +1368,11 @@ function trendDateRange(summary: UsageSummary): [number | null, number | null] {
     return [start, end];
   }
   const start = dateKeyTimestamp(summary.range.startDate, summary.range.timeZone.resolvedTimeZone);
-  const end = dateKeyTimestamp(summary.range.endDate, summary.range.timeZone.resolvedTimeZone);
+  const end = Math.floor(new Date(summary.range.end).getTime() / 1_000);
   if (!Number.isFinite(start) || !Number.isFinite(end)) {
     return [null, null];
   }
-  return [start, end + 86_400];
+  return [start, end];
 }
 
 function chartLabel(metric: ChartMetric, translate: (key: string) => string): string {
@@ -1720,8 +1720,8 @@ function formatDuration(start: string | undefined, end: string | undefined, tran
   return parts.join(" ");
 }
 
-function formatShortDate(value: number, locale: string): string {
-  return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: "UTC" }).format(new Date(value * 1000));
+function formatShortDate(value: number, locale: string, timeZone?: string): string {
+  return cachedDateFormat(locale, { month: "numeric", day: "numeric", timeZone: timeZone ?? "UTC" }).format(new Date(value * 1000));
 }
 
 /** Formats an epoch second as a local HH:MM label for hourly trend axes. */
@@ -1729,15 +1729,22 @@ function formatShortHour(value: number, locale: string, timeZone: string): strin
   return cachedDateFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(value * 1000));
 }
 
-/** Converts a day or hour bucket key to an epoch second, honoring the time zone for hour keys. */
+/**
+ * Converts a bucket key to an epoch second. Hour keys ("2026-11-01T01-04:00")
+ * carry their own UTC offset, so the two repeated hours of a DST fall-back
+ * resolve to different instants; day keys ("2026-11-01") resolve to local
+ * midnight in the given zone (UTC midnight when no zone is known).
+ */
 function dateKeyTimestamp(value: string, timeZone?: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (match) {
-    return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 1000);
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    return Math.floor((timeZone ? zonedLocalTimeToUtcEpoch(year, month, day, 0, timeZone) : Date.UTC(year, month - 1, day)) / 1000);
   }
-  const hourMatch = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})$/.exec(value);
-  if (hourMatch && timeZone) {
-    return Math.floor(zonedLocalTimeToUtcEpoch(Number(hourMatch[1]), Number(hourMatch[2]), Number(hourMatch[3]), Number(hourMatch[4]), timeZone) / 1000);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}[+-]\d{2}:\d{2}$/.test(value)) {
+    return Math.floor(Date.parse(`${value.slice(0, 13)}:00:00${value.slice(13)}`) / 1000);
   }
   return Number.NaN;
 }
@@ -1947,7 +1954,7 @@ type ReportPalette = {
   warning: string;
   claude: string;
   codex: string;
-  opencode: string;
+  pi: string;
 };
 
 type ReportCanvas = {
@@ -2049,7 +2056,7 @@ function reportPalette(): ReportPalette {
     warning: canvasColor("--accent-3", "#cca700"),
     claude: canvasColor("--provider-claude", "#d97757"),
     codex: canvasColor("--provider-codex", "#10a37f"),
-    opencode: canvasColor("--provider-opencode", "#3b82f6"),
+    pi: canvasColor("--provider-pi", "#3b82f6"),
   };
 }
 
@@ -2189,10 +2196,10 @@ function drawReportTrend(report: ReportCanvas, options: ReportRenderOptions, y: 
   const last = options.summary.trend[options.summary.trend.length - 1]?.bucket;
   const reportTimeZone = options.summary.range?.timeZone?.resolvedTimeZone;
   const reportHourly = (options.summary.trendGranularity ?? "day") === "hour";
-  const formatBucketLabel = (bucket: string) => {
-    const timestamp = dateKeyTimestamp(bucket, reportTimeZone);
-    return reportHourly ? formatShortHour(timestamp, options.locale, reportTimeZone) : formatShortDate(timestamp, options.locale);
-  };
+  // Hour buckets carry their own offset ("2026-11-01T01-04:00"); the label is
+  // the key's own wall-clock hour, so both DST fall-back hours read "01:00".
+  const formatBucketLabel = (bucket: string) =>
+    reportHourly ? `${bucket.slice(11, 13)}:00` : formatShortDate(dateKeyTimestamp(bucket, reportTimeZone), options.locale, reportTimeZone);
   if (first) {
     context.fillText(formatBucketLabel(first), plot.x, plot.y + plot.height + 24);
   }
@@ -2641,8 +2648,8 @@ function providerColor(provider: UsageProviderFilter): string {
   if (provider === "codex") {
     return getCssColor("--provider-codex", "#10a37f");
   }
-  if (provider === "opencode") {
-    return getCssColor("--provider-opencode", "#3b82f6");
+  if (provider === "pi") {
+    return getCssColor("--provider-pi", "#3b82f6");
   }
   return getCssColor("--vscode-charts-blue", "#3794ff");
 }

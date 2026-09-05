@@ -460,7 +460,7 @@
       }
     },
     {
-      "provider": "opencode",
+      "provider": "pi",
       "model": "deepseek-v4-flash",
       "modelAliases": [
         "deepseek-chat",
@@ -479,7 +479,7 @@
       }
     },
     {
-      "provider": "opencode",
+      "provider": "pi",
       "model": "deepseek-v4-pro",
       "modelAliases": [
         "deepseek-v4-pro[1m]"

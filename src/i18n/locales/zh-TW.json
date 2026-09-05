@@ -169,7 +169,7 @@
   "currency.source.manual": "手動匯率",
   "currency.source.public": "公開匯率",
   "currency.source.default": "預設",
-  "currency.missingRate": "所選貨幣尚無匯率，先以 USD 顯示；請更新公開匯率或手動輸入。",
+  "currency.missingRate": "所選貨幣尚無匯率，先以 USD 顯示；請更新公開匯率，或在 `aiCodingUsage.exchangeRates` 設定中指定。",
   "currency.quickLabel": "常用",
   "currency.applied": "顯示幣種已切換為 {code}",
   "currency.codePlaceholder": "幣種代碼（如 USD、CNY）"

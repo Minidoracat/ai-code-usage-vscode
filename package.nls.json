@@ -20,5 +20,5 @@
   "configuration.exchangeRates.description": "Manual exchange rates per 1 USD, for example `{\"TWD\": 32.5, \"JPY\": 155}`. Manual rates override public rates fetched with the dashboard's \"Update public rates\" button. Nothing is fetched automatically.",
   "configuration.screenshotIncludePricing.description": "Include the pricing rules panel in the full-page screenshot copy.",
   "configuration.screenshotIncludeSessions.description": "Include the sessions table in the full-page screenshot copy.",
-  "configuration.opencodeUsagePath.description": "Local opencode usage path (pi agent session transcripts). Leave empty to automatically apply detected local sources."
+  "configuration.piUsagePath.description": "Local pi coding agent sessions path (omp, pi CLI, or vscode-pi transcripts). Leave empty to automatically apply detected local sources."
 }

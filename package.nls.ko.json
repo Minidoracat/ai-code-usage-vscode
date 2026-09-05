@@ -20,5 +20,5 @@
   "configuration.exchangeRates.description": "수동 환율(1 USD당 대상 통화 수량)입니다. 예: `{\"TWD\": 32.5, \"JPY\": 155}`. 수동 환율이 대시보드 「공개 환율 업데이트」로 가져온 공개 환율보다 우선합니다. 자동으로 가져오지 않습니다.",
   "configuration.screenshotIncludePricing.description": "전체 페이지 스크린샷 복사에 가격 규칙 패널을 포함합니다.",
   "configuration.screenshotIncludeSessions.description": "전체 페이지 스크린샷 복사에 세션 테이블을 포함합니다.",
-  "configuration.opencodeUsagePath.description": "opencode usage data의 로컬 path입니다(pi agent 세션 기록). 비워 두면 감지된 로컬 source를 자동 적용합니다."
+  "configuration.piUsagePath.description": "pi coding agent 세션 기록(omp, pi CLI, vscode-pi)의 로컬 path입니다. 비워 두면 감지된 로컬 소스를 자동으로 적용합니다."
 }

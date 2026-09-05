@@ -47,21 +47,12 @@ test("valid currency update message normalizes the code", () => {
     requestId: "currency",
     type: "setCurrency",
     version: webviewProtocolVersion,
-    payload: { code: "twd", rate: 32.5 },
+    payload: { code: "twd" },
   });
   assert.equal("error" in result, false);
   if (!("error" in result) && result.type === "setCurrency") {
     assert.equal(result.payload.code, "TWD");
-    assert.equal(result.payload.rate, 32.5);
   }
-
-  const withoutRate = validateWebviewRequest({
-    requestId: "currency",
-    type: "setCurrency",
-    version: webviewProtocolVersion,
-    payload: { code: "USD" },
-  });
-  assert.equal("error" in withoutRate, false);
 });
 
 test("invalid currency update fails", () => {
@@ -72,14 +63,6 @@ test("invalid currency update fails", () => {
     payload: { code: "NT$" },
   });
   assert.equal("error" in badCode, true);
-
-  const badRate = validateWebviewRequest({
-    requestId: "currency",
-    type: "setCurrency",
-    version: webviewProtocolVersion,
-    payload: { code: "TWD", rate: -1 },
-  });
-  assert.equal("error" in badRate, true);
 });
 
 test("valid exchange rate refresh message passes", () => {

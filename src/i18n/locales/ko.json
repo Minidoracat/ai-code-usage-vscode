@@ -169,7 +169,7 @@
   "currency.source.manual": "수동 환율",
   "currency.source.public": "공개 환율",
   "currency.source.default": "기본값",
-  "currency.missingRate": "선택한 통화의 환율이 아직 없어 USD로 표시 중입니다. 공개 환율을 업데이트하거나 직접 입력하세요.",
+  "currency.missingRate": "선택한 통화의 환율이 아직 없어 USD로 표시 중입니다. 공개 환율을 업데이트하거나 `aiCodingUsage.exchangeRates` 설정에서 직접 지정하세요.",
   "currency.quickLabel": "자주 쓰는",
   "currency.applied": "표시 통화가 {code}(으)로 전환되었습니다",
   "currency.codePlaceholder": "통화 코드(예: USD, CNY)"
