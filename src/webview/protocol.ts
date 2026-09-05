@@ -9,6 +9,7 @@ import type {
   UsageSummary,
 } from "../domain/types";
 import { isTimeRangeKind } from "../domain/timeRange";
+import type { DisplayCurrencyState } from "../domain/currency";
 import { isValidAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
 import { isTimeZoneMode, isValidTimeZone } from "../services/TimeZoneService";
 
@@ -71,6 +72,21 @@ export type WebviewRequest =
         mode: TimeZoneMode;
         customTimeZone?: string;
       };
+    }
+  | {
+      requestId: string;
+      type: "setCurrency";
+      version: typeof webviewProtocolVersion;
+      payload: {
+        code: string;
+        rate?: number;
+      };
+    }
+  | {
+      requestId: string;
+      type: "refreshExchangeRates";
+      version: typeof webviewProtocolVersion;
+      payload?: undefined;
     };
 
 export type ExtensionMessage =
@@ -130,6 +146,11 @@ export type DashboardLoadingState = {
   cache?: DashboardCacheState;
 };
 
+export type DashboardScreenshotSettings = {
+  includePricing: boolean;
+  includeSessions: boolean;
+};
+
 export type DashboardState = {
   locale: string;
   localePreference: DashboardLocalePreference;
@@ -139,6 +160,10 @@ export type DashboardState = {
   timeZone: TimeZoneState;
   pricing: PricingCatalog;
   summary: UsageSummary;
+  // Optional so persisted snapshots from older builds keep restoring.
+  currency?: DisplayCurrencyState;
+  availableCurrencies?: string[];
+  screenshot?: DashboardScreenshotSettings;
 };
 
 export function validateWebviewRequest(value: unknown): WebviewRequest | { error: string } {
@@ -212,6 +237,30 @@ export function validateWebviewRequest(value: unknown): WebviewRequest | { error
         payload: { intervalSeconds },
       };
     }
+  }
+  if (value["type"] === "setCurrency" && isObject(value["payload"])) {
+    const code = value["payload"]["code"];
+    const rate = value["payload"]["rate"];
+    const validCode = typeof code === "string" && /^[A-Za-z]{3}$/.test(code.trim());
+    const validRate = rate === undefined || (typeof rate === "number" && Number.isFinite(rate) && rate > 0);
+    if (validCode && validRate) {
+      return {
+        requestId: value["requestId"],
+        type: "setCurrency",
+        version: webviewProtocolVersion,
+        payload: {
+          code: (code as string).trim().toUpperCase(),
+          rate: rate as number | undefined,
+        },
+      };
+    }
+  }
+  if (value["type"] === "refreshExchangeRates") {
+    return {
+      requestId: value["requestId"],
+      type: "refreshExchangeRates",
+      version: webviewProtocolVersion,
+    };
   }
   if (value["type"] === "setTimeZone" && isObject(value["payload"])) {
     const mode = value["payload"]["mode"];

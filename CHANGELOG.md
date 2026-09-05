@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.6 - 2026-07-10
+
+### Added
+
+- GPT-5.6 Sol, Terra, and Luna pricing, with `gpt-5.6` as an alias for Sol, plus official long-context rates for GPT-5.5 and GPT-5.4.
+
+### Changed
+
+- Long-context pricing now uses a strict per-record `input + cachedInput > 272K` threshold and applies the selected base or long-context tier to the whole record.
+- Pricing cards, model badges, tooltips, and fallback canvas reports now show distinct base and long-context rates without overlapping or clipping adjacent rules.
+- Clarified the Codex-only cache-write limitation: local Codex JSONL has no structured `cache_write_tokens`, so unreported cache-write usage is not inferred; Claude `cacheWrite5m` and `cacheWrite1h` remain supported when present.
+
+## 0.1.5 - 2026-07-02
+
+### Added
+
+- Claude Sonnet 5 pricing in the packaged catalog, including the introductory rates ($2/$10 per MTok with matching cache rates) through 2026-08-31 and the standard rates ($3/$15) from 2026-09-01 — the switch is automatic based on each record's timestamp, and a catalog gate now enforces that dated rules stay contiguous.
+- Display currency conversion. A new currency row in the dashboard lets you pick a 3-letter code, fetch public exchange rates on demand (user-triggered request to `open.er-api.com`; no local data is sent, nothing runs automatically), or enter a manual rate per 1 USD. Manual rates take precedence over public rates; applying with an empty rate clears the manual override. Costs are always calculated and cached in USD — conversion is display-only and also applies to the status bar and screenshots.
+- Screenshot content settings: the full-page screenshot copy now excludes the pricing rules panel and the sessions table by default; `aiCodingUsage.screenshot.includePricing` and `aiCodingUsage.screenshot.includeSessions` opt them back in (both capture paths honor the settings, and the fallback renderer now draws pricing rules when included).
+
+### Changed
+
+- Pricing rule cards now show their effective window inline, and the model breakdown marks models whose rate changed within the selected range.
+- Display-only setting changes (currency, exchange rates, screenshot content) replay the cached summary instead of re-running the aggregate pipeline.
+- The privacy static check now also scans `.tsx` sources and pins the one sanctioned network host; the exchange-rate fetch validates the provider response strictly (USD base, sane rates, valid timestamp), caps the response size, and refuses redirects.
+
 ## 0.1.4 - 2026-06-11
 
 ### Fixed

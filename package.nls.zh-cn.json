@@ -15,5 +15,9 @@
   "configuration.timeZoneMode.description": "Dashboard 时区模式。system 会跟随这台机器，utc 使用 UTC，custom 搭配 IANA time zone。",
   "configuration.customTimeZone.description": "Dashboard 自定义 IANA time zone，例如 Asia/Taipei。仅在 timeZoneMode 为 custom 时使用。",
   "configuration.autoRefreshIntervalSeconds.description": "自动刷新间隔秒数。设为 0 可停止自动刷新；1 到 29 会视为 30 秒；建议默认值是 300 秒。",
-  "configuration.autoDetectLocalSources.description": "自动检测并套用本地 Claude Code 与 Codex usage paths。"
+  "configuration.autoDetectLocalSources.description": "自动检测并套用本地 Claude Code 与 Codex usage paths。",
+  "configuration.displayCurrency.description": "成本显示货币，使用 3 位代码，例如 USD、TWD、JPY、EUR。成本以 USD 计算，显示时换算；`aiCodingUsage.exchangeRates` 的手动汇率优先于仪表板「更新公开汇率」获取的公开汇率，完全没有汇率时回退为 USD。",
+  "configuration.exchangeRates.description": "手动汇率（每 1 USD 可兑换的目标货币数量），例如 `{\"TWD\": 32.5, \"JPY\": 155}`。手动汇率优先于仪表板「更新公开汇率」获取的公开汇率；不会自动联网获取。",
+  "configuration.screenshotIncludePricing.description": "复制整页截图时包含计价规则面板。",
+  "configuration.screenshotIncludeSessions.description": "复制整页截图时包含会话表格。"
 }

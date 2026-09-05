@@ -41,7 +41,7 @@
 - `打开 AI Coding Usage`：在 editor area 打开 dashboard。
 - `刷新使用量`：重新扫描本机 usage files 并更新 dashboard。
 - `检测本地 AI 使用量来源`：检测本机 Claude Code 和 Codex usage paths。
-- `打开 AI Coding Usage 设置`：配置 usage paths、语言、时区和 auto refresh。
+- `打开 AI Coding Usage 设置`：配置 usage paths、语言、时区、auto refresh、显示货币和截图内容。
 
 第一次启动时，可以先让 usage path settings 保持为空，extension 会检测常见本机路径。也可以在 settings 手动填入 `aiCodingUsage.claude.usagePath` 或 `aiCodingUsage.codex.usagePath`。
 
@@ -53,9 +53,9 @@
 - 不上传数据
 - 不做 cloud sync
 - 不收集 telemetry
-- Runtime 不发起 network requests
+- 没有后台 network requests
 
-extension 只会读取你配置或通过本机来源检测批准的 usage paths。
+唯一的网络请求由用户主动触发：在仪表板点击「更新公开汇率」时，会向 `open.er-api.com` 获取汇率（数据来源：[ExchangeRate-API](https://www.exchangerate-api.com)），不会发送任何本地数据，也绝不会自动执行。其余均为本地处理：extension 只会读取你配置或通过本机来源检测批准的 usage paths。
 
 ## 本机使用量来源
 
@@ -82,6 +82,10 @@ extension 只会读取你配置或通过本机来源检测批准的 usage paths�
 - 保证准确的 billing statement
 
 pricing 来自 package 内的 `src/pricing/catalog.json`。catalog 包含 source URLs 和 `checkedAt` metadata，并由 `npm run check:pricing` 在 package 前验证 pricing metadata。
+
+成本以 USD 计算。要以其他货币显示，请使用仪表板的货币行：选择 3 位货币代码（例如 `TWD`），再点击「更新公开汇率」（用户主动触发、向 `open.er-api.com` 获取），或手动输入每 1 USD 汇率。手动汇率（存于 `aiCodingUsage.exchangeRates`）优先于公开汇率；完全没有汇率时回退为 USD 显示。
+
+复制整页截图默认不包含计价规则面板与会话表格；可通过 `aiCodingUsage.screenshot.includePricing` 或 `aiCodingUsage.screenshot.includeSessions` 开启。
 
 ## 截图
 

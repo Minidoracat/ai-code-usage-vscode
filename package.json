@@ -2,7 +2,7 @@
   "name": "ai-code-usage",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "publisher": "minidoracat",
   "license": "MIT",
   "repository": {
@@ -158,6 +158,31 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%configuration.autoDetectLocalSources.description%"
+        },
+        "aiCodingUsage.displayCurrency": {
+          "type": "string",
+          "default": "USD",
+          "pattern": "^[A-Za-z]{3}$",
+          "markdownDescription": "%configuration.displayCurrency.description%"
+        },
+        "aiCodingUsage.exchangeRates": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "markdownDescription": "%configuration.exchangeRates.description%"
+        },
+        "aiCodingUsage.screenshot.includePricing": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%configuration.screenshotIncludePricing.description%"
+        },
+        "aiCodingUsage.screenshot.includeSessions": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%configuration.screenshotIncludeSessions.description%"
         }
       }
     }

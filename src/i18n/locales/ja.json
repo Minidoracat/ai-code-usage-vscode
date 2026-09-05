@@ -77,6 +77,10 @@
   "pricing.shortInput": "入力",
   "pricing.shortOutput": "出力",
   "pricing.shortCache": "キャッシュ",
+  "pricing.baseRates": "基本料金",
+  "pricing.longContextRates": "長コンテキスト料金",
+  "pricing.contextThreshold": "コンテキストしきい値",
+  "pricing.cacheWriteCaveat": "Codex のみ：ローカル Codex JSONL には現在、構造化された cache_write_tokens がないため、未報告のキャッシュ書き込み使用量は推定も推測もしません。Claude のソースが cacheWrite5m/cacheWrite1h を提供する場合は、従来どおり表示して料金を計算します。",
   "pricing.cachedInput": "キャッシュ入力",
   "pricing.cacheWrite5m": "キャッシュ書込 5m",
   "pricing.cacheWrite1h": "キャッシュ書込 1h",
@@ -154,5 +158,14 @@
   "range.invalidCustom": "カスタム日付が無効です：開始日は終了日より後にできず、年は 2000 年以降である必要があります。",
   "state.backgroundRefresh": "バックグラウンドで更新中です。完了するとダッシュボードに自動的に反映されます。",
   "modal.rebuildCacheConfirm": "キャッシュを再構築しますか？すべての usage ファイルを再解析します。データ量によっては数十秒〜数分かかることがあります。",
-  "modal.rebuildCacheProceed": "再構築"
+  "modal.rebuildCacheProceed": "再構築",
+  "pricing.variesInRange": "この期間内に料金が変更されました。期間終了時点で有効な料金を表示しています。",
+  "currency.label": "通貨",
+  "currency.rateLabel": "1 USD あたりのレート",
+  "currency.updatePublic": "公開レートを更新",
+  "currency.updateFailed": "公開為替レートを取得できませんでした。ネットワークを確認して再試行してください。",
+  "currency.source.manual": "手動レート",
+  "currency.source.public": "公開レート",
+  "currency.source.default": "既定",
+  "currency.missingRate": "選択した通貨のレートがまだありません。USD で表示中です。公開レートを更新するか手動で入力してください。"
 }

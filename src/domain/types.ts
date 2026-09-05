@@ -158,6 +158,10 @@ export type PricingRule = {
   effectiveFrom?: string;
   effectiveTo?: string;
   rates: Partial<Record<TokenCategory, number>>;
+  longContext?: {
+    appliesAboveInputTokens: number;
+    rates: PricingRule["rates"];
+  };
 };
 
 export type PricingCatalog = {

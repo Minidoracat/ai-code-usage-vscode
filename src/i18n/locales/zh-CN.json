@@ -77,6 +77,10 @@
   "pricing.shortInput": "输入",
   "pricing.shortOutput": "输出",
   "pricing.shortCache": "缓存",
+  "pricing.baseRates": "基础费率",
+  "pricing.longContextRates": "长上下文费率",
+  "pricing.contextThreshold": "上下文阈值",
+  "pricing.cacheWriteCaveat": "仅限 Codex：本地 Codex JSONL 目前没有结构化的 cache_write_tokens，因此不会估算或推测未报告的缓存写入用量。Claude 来源若提供 cacheWrite5m/cacheWrite1h，仍会照常显示并计价。",
   "pricing.cachedInput": "缓存输入",
   "pricing.cacheWrite5m": "缓存写入 5m",
   "pricing.cacheWrite1h": "缓存写入 1h",
@@ -154,5 +158,14 @@
   "range.invalidCustom": "自定义日期无效：开始日期不可晚于结束日期，且年份需为 2000 年以后。",
   "state.backgroundRefresh": "仍在后台更新中，完成后仪表板会自动显示。",
   "modal.rebuildCacheConfirm": "要重建缓存吗？所有 usage 文件将重新解析；数据量大时可能需要数十秒到数分钟。",
-  "modal.rebuildCacheProceed": "重建"
+  "modal.rebuildCacheProceed": "重建",
+  "pricing.variesInRange": "此区间内费率曾调整；显示区间结束时生效的费率。",
+  "currency.label": "货币",
+  "currency.rateLabel": "每 1 USD 汇率",
+  "currency.updatePublic": "更新公开汇率",
+  "currency.updateFailed": "无法获取公开汇率，请确认网络后重试。",
+  "currency.source.manual": "手动汇率",
+  "currency.source.public": "公开汇率",
+  "currency.source.default": "默认",
+  "currency.missingRate": "所选货币尚无汇率，先以 USD 显示；请更新公开汇率或手动输入。"
 }

@@ -41,7 +41,7 @@ dashboard는 다음 중 하나로 열 수 있습니다.
 - `AI Coding Usage 열기`: editor area에 dashboard를 엽니다.
 - `사용량 새로 고침`: 로컬 usage files를 다시 스캔하고 dashboard를 업데이트합니다.
 - `로컬 AI usage sources 감지`: 로컬 Claude Code 및 Codex usage paths를 감지합니다.
-- `AI Coding Usage 설정 열기`: usage paths, 언어, time zone, auto refresh를 설정합니다.
+- `AI Coding Usage 설정 열기`: usage paths, 언어, time zone, auto refresh, 표시 통화, 스크린샷 내용을 설정합니다.
 
 처음 실행할 때 usage path settings를 비워 두면 extension이 일반적인 로컬 경로를 감지합니다. settings에서 `aiCodingUsage.claude.usagePath` 또는 `aiCodingUsage.codex.usagePath`를 직접 입력할 수도 있습니다.
 
@@ -53,9 +53,9 @@ dashboard는 다음 중 하나로 열 수 있습니다.
 - upload 없음
 - cloud sync 없음
 - telemetry 없음
-- Runtime network requests 없음
+- 백그라운드 network requests 없음
 
-extension은 사용자가 설정했거나 로컬 소스 감지로 승인한 usage paths만 읽습니다.
+유일한 네트워크 요청은 사용자가 직접 트리거합니다. 대시보드에서 「공개 환율 업데이트」를 누르면 `open.er-api.com`에서 환율을 가져옵니다(데이터 제공: [ExchangeRate-API](https://www.exchangerate-api.com)). 로컬 데이터는 전혀 전송하지 않으며 자동으로 실행되지도 않습니다. 그 외에는 모두 로컬에서 처리됩니다. extension은 사용자가 설정했거나 로컬 소스 감지로 승인한 usage paths만 읽습니다.
 
 ## 로컬 사용량 소스
 
@@ -82,6 +82,10 @@ Remote SSH 또는 WSL 창에서는 extension이 remote extension host에서 실�
 - 보장된 billing statement
 
 pricing은 package에 포함된 `src/pricing/catalog.json`에서 계산됩니다. catalog에는 source URLs와 `checkedAt` metadata가 포함되며, `npm run check:pricing`이 package 전에 pricing metadata를 검증합니다.
+
+비용은 USD로 계산됩니다. 다른 통화로 표시하려면 대시보드의 통화 행을 사용하세요. 3자리 통화 코드(예: `TWD`)를 선택한 뒤 「공개 환율 업데이트」(사용자 트리거로 `open.er-api.com`에서 가져옴)를 누르거나 1 USD당 환율을 직접 입력합니다. 수동 환율(`aiCodingUsage.exchangeRates`에 저장)이 공개 환율보다 우선합니다. 환율이 전혀 없으면 USD 표시로 대체됩니다.
+
+전체 페이지 스크린샷 복사에는 기본적으로 가격 규칙 패널과 세션 테이블이 포함되지 않습니다. `aiCodingUsage.screenshot.includePricing` 또는 `aiCodingUsage.screenshot.includeSessions`로 포함할 수 있습니다.
 
 ## 스크린샷
 

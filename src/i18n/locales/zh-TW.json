@@ -77,6 +77,10 @@
   "pricing.shortInput": "輸入",
   "pricing.shortOutput": "輸出",
   "pricing.shortCache": "快取",
+  "pricing.baseRates": "基本費率",
+  "pricing.longContextRates": "長上下文費率",
+  "pricing.contextThreshold": "上下文門檻",
+  "pricing.cacheWriteCaveat": "僅限 Codex：本機 Codex JSONL 目前沒有結構化的 cache_write_tokens，因此不會估算或推測未回報的快取寫入用量。Claude 來源若提供 cacheWrite5m/cacheWrite1h，仍會照常顯示並計價。",
   "pricing.cachedInput": "快取輸入",
   "pricing.cacheWrite5m": "快取寫入 5m",
   "pricing.cacheWrite1h": "快取寫入 1h",
@@ -154,5 +158,14 @@
   "range.invalidCustom": "自訂日期無效：開始日期不可晚於結束日期，且年份需為 2000 年以後。",
   "state.backgroundRefresh": "仍在背景更新中，完成後儀表板會自動顯示。",
   "modal.rebuildCacheConfirm": "要重建快取嗎？所有 usage 檔案會重新解析；資料量大時可能需要數十秒到數分鐘。",
-  "modal.rebuildCacheProceed": "重建"
+  "modal.rebuildCacheProceed": "重建",
+  "pricing.variesInRange": "此區間內費率曾調整；顯示區間結束時生效的費率。",
+  "currency.label": "貨幣",
+  "currency.rateLabel": "每 1 USD 匯率",
+  "currency.updatePublic": "更新公開匯率",
+  "currency.updateFailed": "無法取得公開匯率，請確認網路後再試。",
+  "currency.source.manual": "手動匯率",
+  "currency.source.public": "公開匯率",
+  "currency.source.default": "預設",
+  "currency.missingRate": "所選貨幣尚無匯率，先以 USD 顯示；請更新公開匯率或手動輸入。"
 }

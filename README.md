@@ -41,7 +41,7 @@ Useful commands:
 - `Open AI Coding Usage`: open the dashboard in the editor area.
 - `Refresh Usage`: rescan local usage files and refresh the dashboard.
 - `Detect Local AI Usage Sources`: detect local Claude Code and Codex usage paths.
-- `Open AI Coding Usage Settings`: configure usage paths, language, time zone, and auto refresh.
+- `Open AI Coding Usage Settings`: configure usage paths, language, time zone, auto refresh, display currency, and screenshot content.
 
 On first launch, leave the usage path settings empty to let the extension detect common local paths. You can also open settings and fill `aiCodingUsage.claude.usagePath` or `aiCodingUsage.codex.usagePath` manually.
 
@@ -53,9 +53,9 @@ This extension is local-only.
 - No upload
 - No cloud sync
 - No telemetry
-- No runtime network requests
+- No background network requests
 
-The extension reads only the local usage paths you configure or approve through local source detection.
+The only network request is optional and user-triggered: pressing "Update public rates" in the dashboard fetches exchange rates from `open.er-api.com` (rates by [ExchangeRate-API](https://www.exchangerate-api.com)). It sends no local data and never runs automatically. Everything else is local-only: the extension reads only the local usage paths you configure or approve through local source detection.
 
 ## Local Usage Sources
 
@@ -82,6 +82,14 @@ They are not:
 - A guaranteed billing statement
 
 Pricing is calculated from the packaged pricing catalog in `src/pricing/catalog.json`. The catalog includes source URLs and `checkedAt` metadata, and `npm run check:pricing` validates the pricing metadata before packaging.
+
+The packaged Codex catalog includes GPT-5.6 Sol (`gpt-5.6-sol`, with `gpt-5.6` as an alias), GPT-5.6 Terra, and GPT-5.6 Luna, plus the official long-context rates for GPT-5.5 and GPT-5.4. For rules with long-context metadata, the long-context tier applies only when one usage record's `input + cachedInput` is strictly greater than 272,000 tokens (`>272K`); exactly 272,000 remains in the base tier. Once selected, that one tier applies to every priced category in the record, including output. Session and date-range totals are not re-tiered.
+
+Codex-specific limitation: local Codex JSONL currently does not expose structured `cache_write_tokens`, so the extension does not estimate or infer unreported cache-write usage. Claude data is unaffected: when a Claude source provides `cacheWrite5m` or `cacheWrite1h`, those categories are displayed and priced normally.
+
+Costs are calculated in USD. To display another currency, use the currency row in the dashboard: pick a 3-letter code (for example `TWD`), then either press "Update public rates" (a user-triggered fetch from `open.er-api.com`) or enter a rate per 1 USD manually. Manual rates (stored in `aiCodingUsage.exchangeRates`) take precedence over fetched public rates; without any rate the dashboard falls back to USD.
+
+The full-page screenshot copy excludes the pricing rules panel and the sessions table by default. Enable `aiCodingUsage.screenshot.includePricing` or `aiCodingUsage.screenshot.includeSessions` to include them.
 
 ## Screenshots
 

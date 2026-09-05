@@ -3,14 +3,40 @@ import type { CostEstimate, PricingCatalog, PricingRule, UsageCost, UsageRecord 
 
 export class PricingService {
   private readonly metadata: ReturnType<typeof validatePricingMetadata>;
-  // Rules with effectiveFrom/effectiveTo depend on the record instant, so the
-  // lookup cache is only safe while the catalog has no dated rules.
-  private readonly cacheableRules: boolean;
+  // Rules with effectiveFrom/effectiveTo depend on the record instant, so those
+  // model keys cannot use the memoized single-rule cache. They get a precomputed
+  // candidate list instead, keeping the per-record cost at a couple of date
+  // comparisons rather than a full catalog scan (the aggregate hot path prices
+  // ~83k records per pass).
+  private readonly datedCandidates = new Map<string, PricingRule[]>();
   private readonly ruleCache = new Map<string, PricingRule | undefined>();
 
   public constructor(private readonly catalog: PricingCatalog) {
     this.metadata = validatePricingMetadata(catalog);
-    this.cacheableRules = this.metadata.ok && !catalog.rules.some((rule) => rule.effectiveFrom || rule.effectiveTo);
+    if (this.metadata.ok) {
+      const datedKeys = new Set<string>();
+      for (const rule of catalog.rules) {
+        if (!rule.effectiveFrom && !rule.effectiveTo) {
+          continue;
+        }
+        for (const name of [rule.model, ...rule.modelAliases]) {
+          datedKeys.add(`${rule.provider}:${name.toLowerCase()}`);
+        }
+      }
+      for (const key of datedKeys) {
+        const separator = key.indexOf(":");
+        const provider = key.slice(0, separator) as UsageRecord["provider"];
+        const model = key.slice(separator + 1);
+        this.datedCandidates.set(
+          key,
+          this.catalog.rules.filter(
+            (rule) =>
+              rule.provider === provider &&
+              (rule.model.toLowerCase() === model || rule.modelAliases.some((alias) => alias.toLowerCase() === model)),
+          ),
+        );
+      }
+    }
   }
 
   public estimate(record: UsageRecord): CostEstimate {
@@ -35,11 +61,15 @@ export class PricingService {
       return { available: false, reason: "unknown_model" };
     }
 
+    const rates =
+      rule.longContext && (record.tokens.input ?? 0) + (record.tokens.cachedInput ?? 0) > rule.longContext.appliesAboveInputTokens
+        ? rule.longContext.rates
+        : rule.rates;
     const amount = Object.entries(record.tokens).reduce((total, [category, count]) => {
       if (typeof count !== "number") {
         return total;
       }
-      const rate = rule.rates[category as keyof typeof rule.rates];
+      const rate = rates[category as keyof typeof rates];
       if (typeof rate !== "number") {
         return total;
       }
@@ -63,10 +93,14 @@ export class PricingService {
   }
 
   private lookupRule(record: UsageRecord): PricingRule | undefined {
-    if (!this.cacheableRules || !record.model) {
+    if (!this.metadata.ok || !record.model) {
       return findPricingRule(this.catalog.rules, record.provider, record.model ?? "", pricingInstant(record));
     }
     const key = `${record.provider}:${record.model.toLowerCase()}`;
+    const datedCandidates = this.datedCandidates.get(key);
+    if (datedCandidates) {
+      return selectPricingRule(datedCandidates, pricingInstant(record));
+    }
     if (this.ruleCache.has(key)) {
       return this.ruleCache.get(key);
     }
@@ -101,6 +135,10 @@ export function findPricingRule(
       (rule.model.toLowerCase() === normalizedModel ||
         rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
   );
+  return selectPricingRule(candidates, at);
+}
+
+function selectPricingRule(candidates: PricingRule[], at?: Date): PricingRule | undefined {
   const applicable = candidates
     .filter((rule) => !at || pricingRuleAppliesAt(rule, at))
     .sort((a, b) => effectiveFromTime(b) - effectiveFromTime(a));
@@ -126,6 +164,9 @@ export function validatePricingMetadata(catalog: PricingCatalog): { ok: true } |
       return { ok: false, reason: "missing_pricing_metadata" };
     }
     if (rule.effectiveFrom && rule.effectiveTo && new Date(rule.effectiveFrom).getTime() >= new Date(rule.effectiveTo).getTime()) {
+      return { ok: false, reason: "missing_pricing_metadata" };
+    }
+    if (!validLongContext(rule)) {
       return { ok: false, reason: "missing_pricing_metadata" };
     }
   }
@@ -163,4 +204,33 @@ function validRequiredIso(value: unknown): value is string {
 
 function validOptionalIso(value: unknown): value is string | undefined {
   return value === undefined || validRequiredIso(value);
+}
+
+function validLongContext(rule: PricingRule): boolean {
+  const longContext: unknown = rule.longContext;
+  if (longContext === undefined) {
+    return true;
+  }
+  if (!isRecord(longContext)) {
+    return false;
+  }
+  const threshold = longContext["appliesAboveInputTokens"];
+  const rates = longContext["rates"];
+  if (typeof threshold !== "number" || !Number.isSafeInteger(threshold) || threshold <= 0 || !isRecord(rates)) {
+    return false;
+  }
+  const entries = Object.entries(rates);
+  if (entries.length === 0 || entries.some(([, rate]) => typeof rate !== "number" || !Number.isFinite(rate) || rate < 0)) {
+    return false;
+  }
+  if (!isRecord(rule.rates)) {
+    return false;
+  }
+  const baseKeys = Object.keys(rule.rates).sort();
+  const longKeys = Object.keys(rates).sort();
+  return baseKeys.length === longKeys.length && baseKeys.every((key, index) => key === longKeys[index]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
