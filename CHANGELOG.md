@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Pending release
+## 0.1.7 - 2026-09-05
 
 ### Added
 
