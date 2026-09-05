@@ -365,35 +365,13 @@
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
       "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
-      "checkedAt": "2026-07-02T00:00:00.000Z",
-      "effectiveTo": "2026-09-01T00:00:00.000Z",
+      "checkedAt": "2026-09-05T00:00:00.000Z",
       "rates": {
         "input": 2,
         "output": 10,
         "cacheWrite5m": 2.5,
         "cacheWrite1h": 4,
         "cacheRead": 0.2
-      }
-    },
-    {
-      "provider": "claude",
-      "model": "claude-sonnet-5",
-      "modelAliases": [
-        "Claude Sonnet 5",
-        "claude-sonnet-5",
-        "claude-sonnet-5[1m]"
-      ],
-      "currency": "USD",
-      "priceUnit": "per_1m_tokens",
-      "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
-      "checkedAt": "2026-07-02T00:00:00.000Z",
-      "effectiveFrom": "2026-09-01T00:00:00.000Z",
-      "rates": {
-        "input": 3,
-        "output": 15,
-        "cacheWrite5m": 3.75,
-        "cacheWrite1h": 6,
-        "cacheRead": 0.3
       }
     },
     {

@@ -113,71 +113,12 @@ test("pricing preserves Claude cache write categories", async () => {
   }
 });
 
-test("current catalog prices Claude Sonnet 5 with introductory rates through 2026-08-31", async () => {
+test("current catalog prices Claude Sonnet 5 at the permanent $2 / $10 rate on both sides of 2026-09-01", async () => {
   const pricing = new PricingService(await srcCatalog());
-  const intro = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-07-15T00:00:00.000Z"));
-  const introCache = pricing.estimate(
-    record("claude", "Claude Sonnet 5", { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 }, "2026-07-15T00:00:00.000Z"),
-  );
-
-  assert.equal(intro.available, true);
-  assert.equal(introCache.available, true);
-  if (intro.available && introCache.available) {
-    assert.equal(intro.cost.amount, 12);
-    assert.equal(introCache.cost.amount, 12.2);
+  for (const at of ["2026-07-15T00:00:00.000Z", "2026-09-02T00:00:00.000Z"]) {
+    const estimate = pricing.estimate(record("claude", "claude-sonnet-5[1m]", { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 }, at));
+    assert.equal(estimate.available && estimate.cost.amount, 12.2, at);
   }
-});
-
-test("current catalog prices Claude Sonnet 5 at standard rates from 2026-09-01", async () => {
-  const pricing = new PricingService(await srcCatalog());
-  const standard = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-09-02T00:00:00.000Z"));
-  const longContext = pricing.estimate(record("claude", "claude-sonnet-5[1m]", { input: 1_000_000, output: 1_000_000 }, "2026-09-02T00:00:00.000Z"));
-
-  assert.equal(standard.available, true);
-  assert.equal(longContext.available, true);
-  if (standard.available && longContext.available) {
-    assert.equal(standard.cost.amount, 18);
-    assert.equal(longContext.cost.amount, 18);
-  }
-});
-
-test("Claude Sonnet 5 rate switch happens exactly at 2026-09-01T00:00:00Z", async () => {
-  const pricing = new PricingService(await srcCatalog());
-  const lastIntroInstant = pricing.estimate(
-    record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-08-31T23:59:59.999Z"),
-  );
-  const boundaryInstant = pricing.estimate(
-    record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-09-01T00:00:00.000Z"),
-  );
-
-  assert.equal(lastIntroInstant.available, true);
-  assert.equal(boundaryInstant.available, true);
-  if (lastIntroInstant.available && boundaryInstant.available) {
-    assert.equal(lastIntroInstant.cost.amount, 12);
-    assert.equal(boundaryInstant.cost.amount, 18);
-  }
-});
-
-test("undated models keep pricing through the rule cache when dated rules exist elsewhere", async () => {
-  const pricing = new PricingService(await srcCatalog());
-  const first = pricing.estimate(record("claude", "claude-opus-4-8", { input: 1_000_000, output: 1_000_000 }));
-  const second = pricing.estimate(record("claude", "claude-opus-4-8", { input: 2_000_000, output: 2_000_000 }));
-  const sonnet = pricing.estimate(record("claude", "claude-sonnet-5", { input: 1_000_000, output: 1_000_000 }, "2026-07-15T00:00:00.000Z"));
-
-  assert.equal(first.available, true);
-  assert.equal(second.available, true);
-  assert.equal(sonnet.available, true);
-  if (first.available && second.available && sonnet.available) {
-    assert.equal(first.cost.amount, 30);
-    assert.equal(second.cost.amount, 60);
-    assert.equal(sonnet.cost.amount, 12);
-  }
-
-  // White-box: the memoized cache must hold the undated key and never the dated one,
-  // otherwise a stale cached rule could serve the wrong dated rate.
-  const ruleCache = (pricing as unknown as { ruleCache: Map<string, unknown> }).ruleCache;
-  assert.equal(ruleCache.has("claude:claude-opus-4-8"), true);
-  assert.equal(ruleCache.has("claude:claude-sonnet-5"), false);
 });
 
 test("current catalog prices Claude Mythos 5 by id", async () => {
@@ -551,6 +492,11 @@ test("pi records without a pi-specific rule price with the model's native vendor
   assert.equal(claude.available && claude.cost.amount, 5);
   assert.equal(codex.available && codex.cost.amount, 1);
   assert.equal(unknown.available, false);
+
+  // pi transcripts report cache reads as `cacheRead`; a Codex rule prices them as
+  // `cachedInput` and counts them toward the long-context threshold.
+  const cached = pricing.estimate(record("pi", "gpt-5.6-sol", { input: 100_000, cacheRead: 200_000 }));
+  assert.equal(cached.available && cached.cost.amount, 0.96); // 300K > 272K: 100K*8 + 200K*0.8
 });
 
 test("current catalog prices GPT-6 Astra and Claude Fable/Mythos 5.1", async () => {
@@ -562,4 +508,26 @@ test("current catalog prices GPT-6 Astra and Claude Fable/Mythos 5.1", async () 
   assert.equal(astra.available && astra.cost.amount, 6);
   assert.equal(fable.available && fable.cost.amount, 0.25);
   assert.equal(mythos.available && mythos.cost.amount, 10);
+});
+
+test("pi fallback honours dated vendor rules per record, regardless of import order", async () => {
+  const base = await srcCatalog();
+  const sol = base.rules.find((rule) => rule.model === "gpt-5.6-sol")!;
+  const dated: PricingCatalog = {
+    ...base,
+    rules: [
+      { ...sol, model: "gpt-dated", modelAliases: [], effectiveTo: "2026-09-01T00:00:00.000Z", rates: { input: 1, output: 1 }, longContext: undefined },
+      { ...sol, model: "gpt-dated", modelAliases: [], effectiveFrom: "2026-09-01T00:00:00.000Z", rates: { input: 2, output: 2 }, longContext: undefined },
+    ],
+  };
+  const before = record("pi", "gpt-dated", { input: 1_000_000 }, "2026-08-15T00:00:00.000Z");
+  const after = record("pi", "gpt-dated", { input: 1_000_000 }, "2026-09-15T00:00:00.000Z");
+  const expected = new Map([[before, 1], [after, 2]]);
+  for (const order of [[before, after], [after, before]]) {
+    const pricing = new PricingService(dated);
+    for (const item of order) {
+      const estimate = pricing.estimate(item);
+      assert.equal(estimate.available && estimate.cost.amount, expected.get(item), item.startedAt);
+    }
+  }
 });

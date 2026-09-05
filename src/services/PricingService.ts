@@ -61,11 +61,22 @@ export class PricingService {
       return { available: false, reason: "unknown_model" };
     }
 
+    // Rules carry cache reads as either `cacheRead` (Claude) or `cachedInput`
+    // (Codex). Source data may use the other name (pi transcripts always say
+    // `cacheRead`), so map the record onto whichever category the rule prices.
+    const tokens = { ...record.tokens };
+    if (typeof rule.rates.cachedInput === "number" && typeof rule.rates.cacheRead !== "number" && typeof tokens.cacheRead === "number") {
+      tokens.cachedInput = (tokens.cachedInput ?? 0) + tokens.cacheRead;
+      delete tokens.cacheRead;
+    } else if (typeof rule.rates.cacheRead === "number" && typeof rule.rates.cachedInput !== "number" && typeof tokens.cachedInput === "number") {
+      tokens.cacheRead = (tokens.cacheRead ?? 0) + tokens.cachedInput;
+      delete tokens.cachedInput;
+    }
     const rates =
-      rule.longContext && (record.tokens.input ?? 0) + (record.tokens.cachedInput ?? 0) > rule.longContext.appliesAboveInputTokens
+      rule.longContext && (tokens.input ?? 0) + (tokens.cachedInput ?? 0) > rule.longContext.appliesAboveInputTokens
         ? rule.longContext.rates
         : rule.rates;
-    const amount = Object.entries(record.tokens).reduce((total, [category, count]) => {
+    const amount = Object.entries(tokens).reduce((total, [category, count]) => {
       if (typeof count !== "number") {
         return total;
       }
@@ -96,7 +107,9 @@ export class PricingService {
     if (!this.metadata.ok || !record.model) {
       return findPricingRule(this.catalog.rules, record.provider, record.model ?? "", pricingInstant(record));
     }
-    const key = `${record.provider}:${record.model.toLowerCase()}`;
+    const model = record.model.toLowerCase();
+    const provider = pricingProviderFor(this.catalog.rules, record.provider, model);
+    const key = `${provider}:${model}`;
     const datedCandidates = this.datedCandidates.get(key);
     if (datedCandidates) {
       return selectPricingRule(datedCandidates, pricingInstant(record));
@@ -104,7 +117,7 @@ export class PricingService {
     if (this.ruleCache.has(key)) {
       return this.ruleCache.get(key);
     }
-    const rule = findPricingRule(this.catalog.rules, record.provider, record.model);
+    const rule = findPricingRule(this.catalog.rules, provider, model);
     this.ruleCache.set(key, rule);
     return rule;
   }
@@ -129,31 +142,33 @@ export function findPricingRule(
   at?: Date,
 ): PricingRule | undefined {
   const normalizedModel = model.toLowerCase();
-  const matching = (target: UsageRecord["provider"]) =>
-    rules.filter(
-      (rule) =>
-        rule.provider === target &&
-        (rule.model.toLowerCase() === normalizedModel ||
-          rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
-    );
-  const rule = selectPricingRule(matching(provider), at);
-  if (rule || provider !== "pi") {
-    return rule;
-  }
-  // pi transcripts carry the upstream model id; price it with that vendor's
-  // catalog when no pi-specific rule exists (imported cost still wins).
-  const native = nativeProviderForModel(normalizedModel);
-  return native ? selectPricingRule(matching(native), at) : undefined;
+  return selectPricingRule(rulesFor(rules, pricingProviderFor(rules, provider, normalizedModel), normalizedModel), at);
 }
 
-function nativeProviderForModel(model: string): UsageRecord["provider"] | undefined {
-  if (model.startsWith("claude")) {
+function rulesFor(rules: PricingRule[], provider: UsageRecord["provider"], normalizedModel: string): PricingRule[] {
+  return rules.filter(
+    (rule) =>
+      rule.provider === provider &&
+      (rule.model.toLowerCase() === normalizedModel || rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
+  );
+}
+
+/**
+ * pi transcripts carry the upstream model id. When the catalog has no
+ * pi-specific rule for it, price with the vendor's own rules (imported cost
+ * still wins in estimate()).
+ */
+function pricingProviderFor(rules: PricingRule[], provider: UsageRecord["provider"], normalizedModel: string): UsageRecord["provider"] {
+  if (provider !== "pi" || rulesFor(rules, "pi", normalizedModel).length > 0) {
+    return provider;
+  }
+  if (normalizedModel.startsWith("claude")) {
     return "claude";
   }
-  if (/^(gpt|o\d)/.test(model)) {
+  if (/^(gpt|o\d)/.test(normalizedModel)) {
     return "codex";
   }
-  return undefined;
+  return provider;
 }
 
 function selectPricingRule(candidates: PricingRule[], at?: Date): PricingRule | undefined {
