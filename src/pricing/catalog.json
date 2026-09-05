@@ -207,7 +207,9 @@
       "modelAliases": [
         "Claude Fable 5.1",
         "claude-fable-5-1",
-        "claude-fable-5-1[1m]"
+        "claude-fable-5.1",
+        "claude-fable-5-1[1m]",
+        "claude-fable-5.1[1m]"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -247,7 +249,9 @@
       "modelAliases": [
         "Claude Mythos 5.1",
         "claude-mythos-5-1",
-        "claude-mythos-5-1[1m]"
+        "claude-mythos-5.1",
+        "claude-mythos-5-1[1m]",
+        "claude-mythos-5.1[1m]"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",

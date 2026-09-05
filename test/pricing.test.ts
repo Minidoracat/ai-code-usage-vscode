@@ -503,7 +503,7 @@ test("current catalog prices GPT-6 Astra and Claude Fable/Mythos 5.1", async () 
   const pricing = new PricingService(await srcCatalog());
   const astra = pricing.estimate(record("codex", "gpt-6-astra", { input: 100_000, output: 100_000 }));
   const fable = pricing.estimate(record("claude", "claude-fable-5-1", { cacheRead: 1_000_000 }));
-  const mythos = pricing.estimate(record("claude", "Claude Mythos 5.1", { input: 1_000_000 }));
+  const mythos = pricing.estimate(record("claude", "claude-mythos-5.1[1m]", { input: 1_000_000 }));
 
   assert.equal(astra.available && astra.cost.amount, 6);
   assert.equal(fable.available && fable.cost.amount, 0.25);
