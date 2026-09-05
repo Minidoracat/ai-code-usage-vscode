@@ -77,6 +77,8 @@
   "pricing.noAliases": "沒有別名",
   "pricing.unmatched": "沒有計價規則",
   "pricing.tooltip.unmatched": "這個模型出現在本機 usage data，但無法匹配內建 pricing catalog。",
+  "pricing.imported": "來源已計費成本",
+  "pricing.tooltip.imported": "成本直接取自 usage 資料中記錄的金額，不需要 catalog 規則。",
   "pricing.shortInput": "輸入",
   "pricing.shortOutput": "輸出",
   "pricing.shortCache": "快取",

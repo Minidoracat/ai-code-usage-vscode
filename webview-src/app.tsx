@@ -948,6 +948,7 @@ function ModelUsagePanel(props: { summary: UsageSummary; pricing: PricingCatalog
                   <strong title={model.model}>{model.model}</strong>
                   <PricingSummary
                     rule={pricingRule}
+                    imported={model.cost?.source === "imported"}
                     variesInRange={Boolean(pricingRule && ruleAtRangeStart && ruleAtRangeStart !== pricingRule)}
                     locale={locale}
                     translate={translate}
@@ -1044,13 +1045,18 @@ function PricingRulesPanel(props: { pricing: PricingCatalog; locale: string; tra
 
 function PricingSummary(props: {
   rule: PricingRule | undefined;
+  imported?: boolean;
   variesInRange?: boolean;
   locale: string;
   translate: (key: string) => string;
 }) {
-  const { rule, variesInRange, locale, translate } = props;
+  const { rule, imported, variesInRange, locale, translate } = props;
   if (!rule) {
-    return (
+    return imported ? (
+      <span class="pricing-summary" title={translate("pricing.tooltip.imported")}>
+        {translate("pricing.imported")}
+      </span>
+    ) : (
       <span class="pricing-summary missing" title={translate("pricing.tooltip.unmatched")}>
         {translate("pricing.unmatched")}
       </span>

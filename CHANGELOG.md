@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- GPT-6 Astra and Claude Fable 5.1 / Mythos 5.1 pricing (5.1 cache reads at $0.25 / MTok).
+- `pi` model cards price with the model's native vendor rule (Claude or Codex) when no pi-specific rule exists, and show "Billed cost from source" instead of "No pricing rule" when every record carries an imported cost.
 - Claude Opus 5 pricing, matching `claude-opus-5`, `Claude Opus 5`, and `claude-opus-5[1m]`, with base, cache-write, and cache-read rates.
 - `pi` provider for pi coding agent session transcripts (omp, pi CLI, vscode-pi), auto-detected from `PI_CODING_AGENT_DIR`, `~/.omp/agent/sessions`, `~/.pi/agent/sessions`, and the vscode-pi global storage; billed cost is imported from the transcript.
 - Hourly trend buckets for ranges up to 48 hours, custom ranges with hour boundaries (`YYYY-MM-DDTHH`), and a cache-rate column in model usage cards.

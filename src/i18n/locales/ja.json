@@ -77,6 +77,8 @@
   "pricing.noAliases": "Alias なし",
   "pricing.unmatched": "料金ルールなし",
   "pricing.tooltip.unmatched": "このモデルはローカル usage data にありますが、同梱 pricing catalog と一致しません。",
+  "pricing.imported": "ソースの請求コスト",
+  "pricing.tooltip.imported": "コストは usage データに記録された金額をそのまま使用しており、catalog のルールは不要です。",
   "pricing.shortInput": "入力",
   "pricing.shortOutput": "出力",
   "pricing.shortCache": "キャッシュ",

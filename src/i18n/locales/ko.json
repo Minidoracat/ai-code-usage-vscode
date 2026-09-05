@@ -77,6 +77,8 @@
   "pricing.noAliases": "별칭 없음",
   "pricing.unmatched": "가격 규칙 없음",
   "pricing.tooltip.unmatched": "이 모델은 로컬 usage data에 있지만 포함된 pricing catalog와 일치하지 않습니다.",
+  "pricing.imported": "소스의 청구 비용",
+  "pricing.tooltip.imported": "비용은 usage 데이터에 기록된 금액을 그대로 사용하며 catalog 규칙이 필요하지 않습니다.",
   "pricing.shortInput": "입력",
   "pricing.shortOutput": "출력",
   "pricing.shortCache": "캐시",

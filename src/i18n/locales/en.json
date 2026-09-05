@@ -77,6 +77,8 @@
   "pricing.noAliases": "No aliases",
   "pricing.unmatched": "No pricing rule",
   "pricing.tooltip.unmatched": "This model appears in local usage data but does not match the packaged pricing catalog.",
+  "pricing.imported": "Billed cost from source",
+  "pricing.tooltip.imported": "Cost comes from the amount recorded in the usage data itself; no catalog rule is needed.",
   "pricing.shortInput": "in",
   "pricing.shortOutput": "out",
   "pricing.shortCache": "cache",

@@ -447,7 +447,7 @@ async function srcCatalog(): Promise<PricingCatalog> {
 }
 
 function record(
-  provider: "claude" | "codex",
+  provider: UsageRecord["provider"],
   model: string,
   tokens: UsageRecord["tokens"],
   timestamp = "2026-04-30T00:00:00.000Z",
@@ -541,3 +541,25 @@ function pricingCatalogWithLongContext(longContext: unknown): PricingCatalog {
 function runPricingCheck(catalogPath: string) {
   return spawnSync(process.execPath, ["scripts/check-pricing.mjs", catalogPath], { encoding: "utf8" });
 }
+
+test("pi records without a pi-specific rule price with the model's native vendor rule", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const claude = pricing.estimate(record("pi", "claude-opus-5", { input: 1_000_000 }));
+  const codex = pricing.estimate(record("pi", "gpt-6-astra", { input: 100_000 }));
+  const unknown = pricing.estimate(record("pi", "grok-4.6", { input: 1_000_000 }));
+
+  assert.equal(claude.available && claude.cost.amount, 5);
+  assert.equal(codex.available && codex.cost.amount, 1);
+  assert.equal(unknown.available, false);
+});
+
+test("current catalog prices GPT-6 Astra and Claude Fable/Mythos 5.1", async () => {
+  const pricing = new PricingService(await srcCatalog());
+  const astra = pricing.estimate(record("codex", "gpt-6-astra", { input: 100_000, output: 100_000 }));
+  const fable = pricing.estimate(record("claude", "claude-fable-5-1", { cacheRead: 1_000_000 }));
+  const mythos = pricing.estimate(record("claude", "Claude Mythos 5.1", { input: 1_000_000 }));
+
+  assert.equal(astra.available && astra.cost.amount, 6);
+  assert.equal(fable.available && fable.cost.amount, 0.25);
+  assert.equal(mythos.available && mythos.cost.amount, 10);
+});

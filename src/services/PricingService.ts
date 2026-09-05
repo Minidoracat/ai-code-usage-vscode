@@ -129,13 +129,31 @@ export function findPricingRule(
   at?: Date,
 ): PricingRule | undefined {
   const normalizedModel = model.toLowerCase();
-  const candidates = rules.filter(
-    (rule) =>
-      rule.provider === provider &&
-      (rule.model.toLowerCase() === normalizedModel ||
-        rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
-  );
-  return selectPricingRule(candidates, at);
+  const matching = (target: UsageRecord["provider"]) =>
+    rules.filter(
+      (rule) =>
+        rule.provider === target &&
+        (rule.model.toLowerCase() === normalizedModel ||
+          rule.modelAliases.some((alias) => alias.toLowerCase() === normalizedModel)),
+    );
+  const rule = selectPricingRule(matching(provider), at);
+  if (rule || provider !== "pi") {
+    return rule;
+  }
+  // pi transcripts carry the upstream model id; price it with that vendor's
+  // catalog when no pi-specific rule exists (imported cost still wins).
+  const native = nativeProviderForModel(normalizedModel);
+  return native ? selectPricingRule(matching(native), at) : undefined;
+}
+
+function nativeProviderForModel(model: string): UsageRecord["provider"] | undefined {
+  if (model.startsWith("claude")) {
+    return "claude";
+  }
+  if (/^(gpt|o\d)/.test(model)) {
+    return "codex";
+  }
+  return undefined;
 }
 
 function selectPricingRule(candidates: PricingRule[], at?: Date): PricingRule | undefined {

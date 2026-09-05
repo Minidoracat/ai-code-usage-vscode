@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-08-20T00:00:00.000Z",
+  "checkedAt": "2026-09-05T00:00:00.000Z",
   "sourceUrls": [
     "https://developers.openai.com/codex/pricing",
     "https://developers.openai.com/api/docs/pricing",
@@ -9,6 +9,30 @@
     "https://api-docs.deepseek.com/quick_start/pricing"
   ],
   "rules": [
+    {
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "modelAliases": [
+        "gpt-6"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "checkedAt": "2026-09-05T00:00:00.000Z",
+      "rates": {
+        "input": 10,
+        "cachedInput": 1,
+        "output": 50
+      },
+      "longContext": {
+        "appliesAboveInputTokens": 272000,
+        "rates": {
+          "input": 20,
+          "cachedInput": 2,
+          "output": 75
+        }
+      }
+    },
     {
       "provider": "codex",
       "model": "gpt-5.6-sol",
@@ -179,6 +203,26 @@
     },
     {
       "provider": "claude",
+      "model": "claude-fable-5-1",
+      "modelAliases": [
+        "Claude Fable 5.1",
+        "claude-fable-5-1",
+        "claude-fable-5-1[1m]"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checkedAt": "2026-09-05T00:00:00.000Z",
+      "rates": {
+        "input": 10,
+        "output": 50,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 0.25
+      }
+    },
+    {
+      "provider": "claude",
       "model": "claude-fable-5",
       "modelAliases": [
         "Claude Fable 5",
@@ -195,6 +239,26 @@
         "cacheWrite5m": 12.5,
         "cacheWrite1h": 20,
         "cacheRead": 1
+      }
+    },
+    {
+      "provider": "claude",
+      "model": "claude-mythos-5-1",
+      "modelAliases": [
+        "Claude Mythos 5.1",
+        "claude-mythos-5-1",
+        "claude-mythos-5-1[1m]"
+      ],
+      "currency": "USD",
+      "priceUnit": "per_1m_tokens",
+      "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "checkedAt": "2026-09-05T00:00:00.000Z",
+      "rates": {
+        "input": 10,
+        "output": 50,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 0.25
       }
     },
     {
