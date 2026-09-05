@@ -86,20 +86,12 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       return;
     }
     let skipped = 0;
+    let ambiguous = 0;
     for (const row of rows) {
       const tokens: UsageRecord["tokens"] = {};
-      // The xAI API reports `input_tokens` inclusive of cached tokens
-      // (docs.x.ai prompt-caching usage-and-pricing); grok-cli's streaming path
-      // stores that value verbatim while its non-streaming path stores the
-      // uncached remainder. The row does not say which, so split whenever the
-      // cache count fits inside the prompt: correct for verbatim rows, and for
-      // already-split rows it can only under-count, never charge cached tokens
-      // twice at the full rate.
-      const cacheRead = Math.max(0, row.cache_read_tokens);
-      const input = cacheRead > 0 && cacheRead <= row.input_tokens ? row.input_tokens - cacheRead : row.input_tokens;
-      if (input > 0) tokens.input = input;
+      if (row.input_tokens > 0) tokens.input = row.input_tokens;
       if (row.output_tokens > 0) tokens.output = row.output_tokens;
-      if (cacheRead > 0) tokens.cacheRead = cacheRead;
+      if (row.cache_read_tokens > 0) tokens.cacheRead = row.cache_read_tokens;
       // xAI has no separate cache-write rate; those tokens are part of input.
       if (Object.keys(tokens).length === 0) {
         skipped += 1; // image/video/audio events carry no token usage
@@ -111,6 +103,15 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         continue;
       }
       const endedAt = normalizeIso(row.completed_at) ?? startedAt;
+      // The xAI API reports input_tokens inclusive of cached tokens, but
+      // grok-cli's streaming and non-streaming paths disagree on whether the
+      // stored value has the cache already subtracted, and the row carries no
+      // marker. Pricing such a row either way is a guess in one direction, so
+      // rows with cache hits are imported for token counts only and flagged
+      // as unpriceable until grok-cli records unambiguous usage.
+      if (row.cache_read_tokens > 0) {
+        ambiguous += 1;
+      }
       result.records.push({
         provider: "grok",
         model: row.model ?? undefined,
@@ -119,9 +120,13 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         endedAt,
         observedAt: endedAt,
         tokens,
+        pricing: row.cache_read_tokens > 0 ? "unavailable" : undefined,
         source: meta,
         raw: row,
       });
+    }
+    if (ambiguous > 0) {
+      result.warnings.push(issue("warning", "ambiguous_cache_tokens", `${ambiguous} grok-cli events have cache hits whose input_tokens semantics grok-cli does not record; they are counted but not priced.`, filePath));
     }
     if (skipped > 0) {
       result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events carry no token usage or no timestamp (image/video/audio) and were skipped.`, filePath));

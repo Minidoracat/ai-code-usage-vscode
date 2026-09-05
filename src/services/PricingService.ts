@@ -52,6 +52,10 @@ export class PricingService {
       return { available: false, reason: "unknown_model" };
     }
 
+    if (record.pricing === "unavailable") {
+      return { available: false, reason: "ambiguous_tokens" };
+    }
+
     if (tokenTotal(record.tokens) === 0) {
       return { available: false, reason: "missing_tokens" };
     }

@@ -56,6 +56,8 @@ export type UsageRecord = {
   observedAt: string;
   tokens: TokenBreakdown;
   cost?: UsageCost;
+  /** Set when the source cannot be priced from its token counts (e.g. ambiguous cache accounting). */
+  pricing?: "unavailable";
   source: SourceMeta;
   raw?: unknown;
 };
@@ -182,6 +184,6 @@ export type CostEstimate =
     }
   | {
       available: false;
-      reason: "unknown_model" | "missing_tokens" | "missing_pricing_metadata";
+      reason: "unknown_model" | "missing_tokens" | "missing_pricing_metadata" | "ambiguous_tokens";
       importedCost?: UsageCost;
     };
