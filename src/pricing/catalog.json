@@ -18,18 +18,18 @@
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
       "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-      "checkedAt": "2026-08-08T00:00:00.000Z",
+      "checkedAt": "2026-09-05T00:00:00.000Z",
       "rates": {
-        "input": 5,
-        "cachedInput": 0.5,
-        "output": 30
+        "input": 4,
+        "cachedInput": 0.4,
+        "output": 20
       },
       "longContext": {
         "appliesAboveInputTokens": 272000,
         "rates": {
-          "input": 10,
-          "cachedInput": 1,
-          "output": 45
+          "input": 8,
+          "cachedInput": 0.8,
+          "output": 30
         }
       }
     },

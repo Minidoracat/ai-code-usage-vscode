@@ -240,8 +240,8 @@ test("aggregator keeps long-context pricing per record instead of repricing the 
   );
 
   assert.equal(summary.totals.tokens.input, 400_000);
-  assert.equal(summary.totals.cost?.amount, 2);
-  assert.equal(summary.sessions[0]?.cost?.amount, 2);
+  assert.equal(summary.totals.cost?.amount, 1.6);
+  assert.equal(summary.sessions[0]?.cost?.amount, 1.6);
 });
 
 function records(): UsageRecord[] {

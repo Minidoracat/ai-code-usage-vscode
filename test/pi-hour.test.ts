@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -50,6 +50,30 @@ test("pi adapter imports pi session records with real billed cost", async () => 
     assert.equal(record?.startedAt, "2026-08-08T02:01:00.000Z");
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("pi adapter takes the session id from the transcript header, not the file name", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-pi-"));
+  const assistant = (id: string) => ({
+    type: "message",
+    id,
+    timestamp: "2026-08-08T02:01:00.000Z",
+    message: { role: "assistant", model: "claude-opus-5", usage: { input: 10, output: 5, cost: { total: 0.001 } } },
+  });
+  try {
+    for (const [dir, uuid] of [["a", "01a0-aaaa"], ["b", "01a0-bbbb"]] as const) {
+      await mkdir(path.join(root, dir), { recursive: true });
+      await writeFile(
+        path.join(root, dir, "__advisor.codex.jsonl"),
+        [{ type: "session", version: 3, id: uuid, timestamp: "2026-08-08T02:00:00.000Z" }, assistant(`m-${dir}`)].map((line) => JSON.stringify(line)).join("\n") + "\n",
+      );
+    }
+
+    const result = await new PiUsageAdapter(root).importUsage();
+    assert.deepEqual(result.records.map((record) => record.sessionId).sort(), ["01a0-aaaa", "01a0-bbbb"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -461,7 +461,12 @@ function updateFileContext(context: FileContext, object: Record<string, unknown>
   if (model) {
     context.model = model;
   }
-  const sessionId = firstString(object, ["sessionId", "session_id", "conversationId", "conversation_id", "uuid", "payload.id", "payload.session_id"]);
+  // pi transcripts open with {"type":"session","id":"<uuid>"}; same-named files in
+  // different session directories must not collapse into one session.
+  const headerId = object["type"] === "session" ? object["id"] : undefined;
+  const sessionId =
+    (typeof headerId === "string" && headerId ? headerId : undefined) ??
+    firstString(object, ["sessionId", "session_id", "conversationId", "conversation_id", "uuid", "payload.id", "payload.session_id"]);
   if (sessionId) {
     context.sessionId = sessionId;
   }

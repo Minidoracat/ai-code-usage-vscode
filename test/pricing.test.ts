@@ -208,10 +208,10 @@ test("current catalog prices Codex as API equivalent USD", async () => {
 test("current catalog prices GPT-5.6 canonical ids and alias", async () => {
   const pricing = new PricingService(await srcCatalog());
   for (const [model, baseAmount, longAmount] of [
-    ["gpt-5.6-sol", 0.5, 56],
+    ["gpt-5.6-sol", 0.4, 38.8],
     ["gpt-5.6-terra", 0.2, 22.4],
     ["gpt-5.6-luna", 0.02, 2.24],
-    ["gpt-5.6", 0.5, 56],
+    ["gpt-5.6", 0.4, 38.8],
   ] as const) {
     const base = pricing.estimate(record("codex", model, { input: 100_000 }));
     const long = pricing.estimate(
@@ -236,9 +236,9 @@ test("GPT-5.6 long-context pricing starts strictly above 272000 prompt tokens", 
   assert.equal(boundary.available, true);
   assert.equal(above.available, true);
   if (below.available && boundary.available && above.available) {
-    assert.equal(below.cost.amount, 1.359995);
-    assert.equal(boundary.cost.amount, 1.36);
-    assert.equal(above.cost.amount, 2.72001);
+    assert.equal(below.cost.amount, 1.087996);
+    assert.equal(boundary.cost.amount, 1.088);
+    assert.equal(above.cost.amount, 2.176008);
   }
 });
 
@@ -252,8 +252,8 @@ test("GPT-5.6 tier includes cached input and applies long output rates to the wh
   assert.equal(cachedCrossing.available, true);
   assert.equal(longOutput.available, true);
   if (cachedCrossing.available && longOutput.available) {
-    assert.equal(cachedCrossing.cost.amount, 1.172001);
-    assert.equal(longOutput.cost.amount, 47.72001);
+    assert.equal(cachedCrossing.cost.amount, 0.937601);
+    assert.equal(longOutput.cost.amount, 32.176008);
   }
 });
 
