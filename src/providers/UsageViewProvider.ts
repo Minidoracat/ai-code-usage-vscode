@@ -1,3 +1,4 @@
+import path from "node:path";
 import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
 import { CodexUsageAdapter } from "../adapters/CodexUsageAdapter";
@@ -712,7 +713,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
 
   /** VS Code's shared `User/globalStorage` directory: parent of this extension's own storage. */
   private globalStorageRoot(): string {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, "..").fsPath;
+    return path.dirname(this.context.globalStorageUri.fsPath);
   }
 
   private configuredUsagePaths(config: vscode.WorkspaceConfiguration): ConfiguredUsagePath[] {

@@ -49,7 +49,7 @@ export function usageSourceCandidates(
   platform = process.platform,
   globalStorageRoot?: string,
 ): Array<{ provider: UsageProvider; sourcePath: string }> {
-  const pathApi = platform === "win32" ? path.win32 : path;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
   const homeRoots = uniqueStrings([
     homeDirectory,
     environment["HOME"],

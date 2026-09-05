@@ -39,19 +39,20 @@ test("source detection ignores POSIX home roots on Windows", () => {
   assert.ok(candidates.every((source) => source.sourcePath.startsWith("C:\\Users\\FixtureUser\\")));
 });
 
-test("pi candidates prefer PI_CODING_AGENT_DIR, then omp, pi CLI, and vscode-pi storage, without duplicates", () => {
-  const home = path.join(tmpdir(), "u");
-  const storage = path.join(home, "globalStorage");
-  const env = { HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent") };
-  const pi = usageSourceCandidates(home, env, process.platform, storage)
-    .filter((source) => source.provider === "pi")
-    .map((source) => source.sourcePath);
+test("pi candidates prefer PI_CODING_AGENT_DIR, then omp, pi CLI, and vscode-pi storage", () => {
+  const pi = (env: NodeJS.ProcessEnv) =>
+    usageSourceCandidates("/home/u", env, "linux", "/home/u/.config/Code/User/globalStorage")
+      .filter((source) => source.provider === "pi")
+      .map((source) => source.sourcePath);
 
-  assert.deepEqual(pi, [
-    path.join(home, ".omp", "agent", "sessions"),
-    path.join(home, ".pi", "agent", "sessions"),
-    path.join(storage, "cdervis.vscode-pi", "bundled-pi-agent", "sessions"),
+  assert.deepEqual(pi({ HOME: "/home/u", PI_CODING_AGENT_DIR: "/custom/agent" }), [
+    "/custom/agent/sessions",
+    "/home/u/.omp/agent/sessions",
+    "/home/u/.pi/agent/sessions",
+    "/home/u/.config/Code/User/globalStorage/cdervis.vscode-pi/bundled-pi-agent/sessions",
   ]);
+  // env pointing at a home-based root collapses into one candidate
+  assert.deepEqual(pi({ HOME: "/home/u", PI_CODING_AGENT_DIR: "/home/u/.omp/agent" }).length, 3);
 });
 
 test("source detection keeps only the first existing pi root", async () => {
