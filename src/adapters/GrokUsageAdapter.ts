@@ -88,10 +88,19 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     let skipped = 0;
     for (const row of rows) {
       const tokens: UsageRecord["tokens"] = {};
-      if (row.input_tokens > 0) tokens.input = row.input_tokens;
+      // The xAI API reports `input_tokens` inclusive of cached tokens
+      // (docs.x.ai prompt-caching usage-and-pricing); grok-cli's streaming path
+      // stores that value verbatim while its non-streaming path stores the
+      // uncached remainder. The row does not say which, so split whenever the
+      // cache count fits inside the prompt: correct for verbatim rows, and for
+      // already-split rows it can only under-count, never charge cached tokens
+      // twice at the full rate.
+      const cacheRead = Math.max(0, row.cache_read_tokens);
+      const input = cacheRead > 0 && cacheRead <= row.input_tokens ? row.input_tokens - cacheRead : row.input_tokens;
+      if (input > 0) tokens.input = input;
       if (row.output_tokens > 0) tokens.output = row.output_tokens;
-      if (row.cache_read_tokens > 0) tokens.cacheRead = row.cache_read_tokens;
-      if (row.cache_write_tokens > 0) tokens.cacheWrite5m = row.cache_write_tokens;
+      if (cacheRead > 0) tokens.cacheRead = cacheRead;
+      // xAI has no separate cache-write rate; those tokens are part of input.
       if (Object.keys(tokens).length === 0) {
         skipped += 1; // image/video/audio events carry no token usage
         continue;

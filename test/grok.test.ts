@@ -56,7 +56,8 @@ test("grok adapter imports grok-cli session events and skips media-only events",
     const [first, second] = result.records;
     assert.equal(first?.model, "grok-4.6");
     assert.equal(first?.sessionId, "sess_a");
-    assert.deepEqual(first?.tokens, { input: 1000, output: 200, cacheRead: 500 });
+    // API-style row: input_tokens (1000) includes the 500 cached tokens.
+    assert.deepEqual(first?.tokens, { input: 500, output: 200, cacheRead: 500 });
     assert.equal(first?.cost, undefined); // grok-cli only stores its own estimate; the catalog prices these
     assert.equal(second?.sessionId, "sess_b");
     assert.ok(result.warnings.some((warning) => warning.code === "no_token_usage"));
@@ -188,6 +189,29 @@ test("grok adapter reports a database without the grok-cli schema as unsupported
 
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.warnings.map((warning) => warning.code), ["unsupported_schema"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("grok pricing does not double count cached tokens toward the 200K long-context tier", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const dbPath = path.join(dir, "session.db");
+    await writeSessionDb(dbPath, [
+      // streaming row: API input_tokens (150K) already includes the 100K cache hit
+      textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 150_000, output: 0, cached: 100_000 }),
+      // non-streaming row: grok-cli stored the uncached remainder; cache exceeds input so it is left alone
+      textEvent("e2", "sess_b", "2026-09-01T11:00:00.000Z", { input: 50_000, output: 0, cached: 100_000 }),
+    ]);
+    const imported = await new GrokUsageAdapter(dbPath).importUsage();
+    const catalog = JSON.parse(await readFile(path.join(process.cwd(), "src/pricing/catalog.json"), "utf8")) as PricingCatalog;
+    const pricing = new PricingService(catalog);
+
+    const [streaming, nonStreaming] = imported.records.map((record) => pricing.estimate(record));
+    // 150K prompt is below the tier: 50K uncached * $2 + 100K cached * $0.50 = $0.15 (not $0.70 at the long-context rate)
+    assert.equal(streaming?.available && streaming.cost.amount, 0.15);
+    assert.equal(nonStreaming?.available && nonStreaming.cost.amount, 0.15);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
