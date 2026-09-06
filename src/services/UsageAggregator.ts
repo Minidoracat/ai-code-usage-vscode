@@ -25,8 +25,11 @@ export class UsageAggregator {
   public constructor(private readonly pricing?: PricingService) {}
 
   public aggregate(imports: AdapterImportResult[], range: TimeRange, providerFilter: UsageProviderFilter = "all"): UsageSummary {
-    const warnings = imports.flatMap((item) => item.warnings);
-    const errors = imports.flatMap((item) => item.errors);
+    // Issues follow the provider filter like records do; issues without a
+    // provider (global) are always shown.
+    const matchesFilter = (issue: ImportIssue) => providerFilter === "all" || !issue.provider || issue.provider === providerFilter;
+    const warnings = imports.flatMap((item) => item.warnings).filter(matchesFilter);
+    const errors = imports.flatMap((item) => item.errors).filter(matchesFilter);
     const sourceMeta = imports.flatMap((item) => item.sourceMeta);
     const records = this.filterRecords(imports.flatMap((item) => item.records), range, providerFilter);
     this.costCache = new Map();

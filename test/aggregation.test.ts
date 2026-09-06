@@ -140,6 +140,22 @@ test("provider filter limits totals to selected provider", () => {
   assert.equal(summary.sessions.every((session) => session.provider === "claude"), true);
 });
 
+test("provider filter also scopes warnings and errors, keeping provider-less issues", () => {
+  const range = new TimeRangeService(() => new Date("2026-04-30T12:00:00.000Z")).resolve("thisWeek");
+  const issue = (code: string, provider?: UsageRecord["provider"]) => ({ severity: "warning" as const, code, message: code, provider });
+  const imports = [
+    { ...importResult(records()), warnings: [issue("claude_only", "claude"), issue("global")] },
+    { ...importResult([]), provider: "grok" as const, warnings: [issue("grok_only", "grok")], errors: [{ ...issue("grok_error", "grok"), severity: "error" as const }] },
+  ];
+
+  const grok = new UsageAggregator().aggregate(imports, range, "grok");
+  const all = new UsageAggregator().aggregate(imports, range, "all");
+
+  assert.deepEqual(grok.warnings.map((item) => item.code), ["global", "grok_only"]);
+  assert.deepEqual(grok.errors.map((item) => item.code), ["grok_error"]);
+  assert.deepEqual(all.warnings.map((item) => item.code), ["claude_only", "global", "grok_only"]);
+});
+
 test("mixed cost currencies do not produce misleading total cost", () => {
   const source = {
     sourcePath: "fixture",
