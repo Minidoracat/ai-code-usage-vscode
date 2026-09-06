@@ -616,6 +616,7 @@ function Dashboard() {
       ) : (
         <>
           <EmptyState title={translate("empty.title")} body={translate("empty.body")} />
+          <IssuePanel summary={summary} translate={translate} />
           <PricingRulesPanel pricing={pricing} locale={locale} translate={translate} />
         </>
       )}

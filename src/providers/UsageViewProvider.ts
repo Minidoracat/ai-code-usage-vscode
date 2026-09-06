@@ -9,6 +9,7 @@ import { tokenTotal } from "../domain/math";
 import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import type {
+  AdapterImportResult,
   ImportIssue,
   PricingCatalog,
   TokenBreakdown,
@@ -375,12 +376,41 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     if (!load) {
       await this.postLoadingData("readingSources", run);
       load = await this.importUsageCached(config, range, run, Boolean(options.forceImport));
+      await this.flagStaleConfiguredSources(config, load.imports);
       this.lastLoad = { key: loadKey, imports: load };
     }
     // A reused import replays no progress, so its historical cache status
     // (e.g. "rebuilding") would be misleading in the loading strip.
     await this.postLoadingData("calculating", run, undefined, reused ? undefined : load.cache);
     return new UsageAggregator(new PricingService(pricingCatalog as PricingCatalog)).aggregate(load.imports, range, this.providerFilter);
+  }
+
+  /**
+   * A configured path that yields nothing while a detectable default has files
+   * is almost always a stale auto-detected value (a tool changed where it
+   * writes). The empty dashboard says nothing by itself, so attach a warning
+   * that names the alternative and the command that re-points it.
+   */
+  private async flagStaleConfiguredSources(config: vscode.WorkspaceConfiguration, imports: AdapterImportResult[]): Promise<void> {
+    const configured = this.configuredUsagePaths(config).filter((source) => source.sourcePath && !source.issue);
+    const silent = imports.filter((item) => item.records.length === 0 && item.errors.length === 0 && configured.some((source) => source.provider === item.provider));
+    if (silent.length === 0) {
+      return;
+    }
+    const detected = await new SourceDetectionService(undefined, undefined, undefined, this.globalStorageRoot()).detect();
+    for (const item of silent) {
+      const current = configured.find((source) => source.provider === item.provider)?.sourcePath;
+      const alternative = detected.find((source) => source.provider === item.provider && source.sourcePath !== current);
+      if (alternative) {
+        item.warnings.push({
+          severity: "warning",
+          code: "source_alternative_detected",
+          message: `Configured path has no usage records, but ${alternative.files} usage file(s) were found at ${alternative.sourcePath}. Run "Detect Local AI Usage Sources" to switch.`,
+          sourcePath: current,
+          provider: item.provider,
+        });
+      }
+    }
   }
 
   private loadKey(config: vscode.WorkspaceConfiguration, range: TimeRange): string {
