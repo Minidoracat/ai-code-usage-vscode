@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { ClaudeUsageAdapter } from "../adapters/ClaudeUsageAdapter";
@@ -405,11 +406,14 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       const alternative = detected.find((candidate) => candidate.provider === source.provider && candidate.sourcePath !== source.sourcePath);
       const target = load.imports.find((item) => item.provider === source.provider);
       if (alternative && target) {
+        // No absolute paths in the message: it is drawn into shareable
+        // screenshots. The home-relative alternative goes in sourcePath, which
+        // only the on-screen issue panel renders.
         target.warnings.push({
           severity: "warning",
           code: "source_alternative_detected",
-          message: `Configured path has no usage records, but ${alternative.files} usage file(s) were found at ${alternative.sourcePath}. Run "Detect Local AI Usage Sources" to switch.`,
-          sourcePath: source.sourcePath,
+          message: `The configured ${source.provider} path has no usage records, but ${alternative.files} usage file(s) exist at the default location. Run "Detect Local AI Usage Sources" to switch.`,
+          sourcePath: homeRelative(alternative.sourcePath),
           provider: source.provider,
         });
       }
@@ -957,6 +961,12 @@ function requestIdFrom(message: unknown): string {
     }
   }
   return "unknown";
+}
+
+/** `/home/u/.grok/sessions` -> `~/.grok/sessions`; paths outside the home directory are returned unchanged. */
+function homeRelative(filePath: string): string {
+  const home = os.homedir();
+  return filePath.startsWith(home + path.sep) ? `~${filePath.slice(home.length)}` : filePath;
 }
 
 /**
