@@ -84,9 +84,9 @@ test("native usage path validation rejects cross-platform synced paths", () => {
   assert.equal(isNativeUsagePath("/posix-fixture-home/.codex/sessions", "linux"), true);
 });
 
-test("every provider usage path setting is machine-scoped so Settings Sync never carries it across machines", async () => {
-  const manifest = JSON.parse(await readFile("package.json", "utf8")) as { contributes: { configuration: { properties: Record<string, { scope?: string }> } } };
-  const properties = manifest.contributes.configuration.properties;
-
-  assert.deepEqual(supportedProviders.map((provider) => properties[`aiCodingUsage.${provider}.usagePath`]?.scope), supportedProviders.map(() => "machine-overridable"));
+test("every usage path setting is machine-scoped so Settings Sync never carries it across machines", async () => {
+  const { properties } = JSON.parse(await readFile("package.json", "utf8")).contributes.configuration;
+  const usagePathKeys = Object.keys(properties).filter((key) => key.endsWith(".usagePath")).sort();
+  assert.deepEqual(usagePathKeys, supportedProviders.map((provider) => `aiCodingUsage.${provider}.usagePath`).sort());
+  assert.deepEqual(usagePathKeys.map((key) => properties[key].scope), usagePathKeys.map(() => "machine-overridable"));
 });
