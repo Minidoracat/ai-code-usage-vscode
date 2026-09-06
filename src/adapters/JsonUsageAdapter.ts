@@ -161,7 +161,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
 
     const sortedEntries = entries.sort((left, right) => left.name.localeCompare(right.name));
     const fileEntries = sortedEntries.filter((entry) => entry.isFile() && this.isUsageFile(entry.name));
-    const directoryEntries = sortedEntries.filter((entry) => entry.isDirectory());
+    const directoryEntries = sortedEntries.filter((entry) => entry.isDirectory() && this.isUsageDirectory(entry.name));
     const fileRefs = (
       await mapWithConcurrency(fileEntries, fileStatConcurrency, async (entry) => {
         const fullPath = path.join(directoryPath, entry.name);
@@ -193,6 +193,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
   /** Which file names inside a usage directory are parsed. Adapters with their own formats override this. */
   protected isUsageFile(name: string): boolean {
     return isUsageFileName(name);
+  }
+
+  /** Which subdirectories are descended into. */
+  protected isUsageDirectory(_name: string): boolean {
+    return true;
   }
 
   protected async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {

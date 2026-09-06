@@ -58,6 +58,7 @@ export function usageSourceCandidates(
   ]).filter((homeRoot) => isNativeUsagePath(homeRoot, platform));
 
   const piAgentDir = environment["PI_CODING_AGENT_DIR"]?.trim();
+  const grokHome = environment["GROK_HOME"]?.trim();
   const candidates = [
     ...homeRoots.flatMap((homeRoot) => [
       { provider: "claude" as const, sourcePath: pathApi.join(homeRoot, ".claude", "projects") },
@@ -71,6 +72,7 @@ export function usageSourceCandidates(
     ...(globalStorageRoot
       ? [{ provider: "pi" as const, sourcePath: pathApi.join(globalStorageRoot, "cdervis.vscode-pi", "bundled-pi-agent", "sessions") }]
       : []),
+    ...(grokHome ? [{ provider: "grok" as const, sourcePath: pathApi.join(grokHome, "sessions") }] : []),
     ...homeRoots.flatMap((homeRoot) => [
       { provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok", "sessions") },
       { provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok-cli", "session.db") },

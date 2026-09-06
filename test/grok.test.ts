@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { GrokUsageAdapter } from "../src/adapters/GrokUsageAdapter";
 import { CachedUsageImporter } from "../src/services/CachedUsageImporter";
 import { PricingService } from "../src/services/PricingService";
-import { SourceDetectionService } from "../src/services/SourceDetectionService";
+import { SourceDetectionService, usageSourceCandidates } from "../src/services/SourceDetectionService";
 import { UsageAggregator } from "../src/services/UsageAggregator";
 import { TimeRangeService } from "../src/services/TimeRangeService";
 import { resolveTimeZone } from "../src/services/TimeZoneService";
@@ -85,6 +85,13 @@ test("grok records aggregate as their own provider and price with the xAI catalo
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("source detection honours GROK_HOME before the default grok agent and grok-cli locations", () => {
+  const grok = usageSourceCandidates("/home/u", { HOME: "/home/u", GROK_HOME: "/custom/grok" }, "linux")
+    .filter((source) => source.provider === "grok")
+    .map((source) => source.sourcePath);
+  assert.deepEqual(grok, ["/custom/grok/sessions", "/home/u/.grok/sessions", "/home/u/.grok-cli/session.db"]);
 });
 
 test("source detection finds the grok-cli session database", async () => {
@@ -243,8 +250,10 @@ test("grok adapter reads the official grok agent's ACP session updates: billed c
       acpTurn(1_788_677_379, "grok-4.6-build", { input: 36_343, output: 63, ticks: 124_208_800 }),
       acpTurn(1_788_677_381, "grok-4.6-build", { input: 36_426, output: 66, cached: 36_224, ticks: 32_150_400 }),
     ].join("\n") + "\n");
-    // sibling files the base scanner would otherwise pick up
+    // sibling files the base scanner would otherwise pick up, and a child session that must not be double counted
     await writeFile(path.join(session, "chat_history.jsonl"), JSON.stringify({ role: "user", content: "hi", usage: { inputTokens: 999 } }) + "\n");
+    await mkdir(path.join(session, "subagents", "child"), { recursive: true });
+    await writeFile(path.join(session, "subagents", "child", "updates.jsonl"), acpTurn(1_788_677_390, "grok-4.6-build", { input: 5, output: 5, ticks: 100 }) + "\n");
     await writeFile(path.join(session, "summary.json"), JSON.stringify({ info: { id: "x" } }));
 
     const result = await new GrokUsageAdapter(root).importUsage();

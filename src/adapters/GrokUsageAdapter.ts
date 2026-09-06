@@ -30,6 +30,15 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
   }
 
   /**
+   * `subagents/<child>/updates.jsonl` are child sessions. Whether the parent's
+   * `turn_completed` usage already aggregates them is undocumented and could not
+   * be observed locally, so they are skipped rather than risk double billing.
+   */
+  protected override isUsageDirectory(name: string): boolean {
+    return name !== "subagents";
+  }
+
+  /**
    * The cache reuses a file while its size/mtime are unchanged, but a
    * `-journal` / `-wal` appearing or disappearing beside the database changes
    * what we can read without touching the main file. Fold their sizes into
