@@ -70,6 +70,49 @@ test("cached importer can force reparse for explicit refreshes", async () => {
   }
 });
 
+test("a parsed, unchanged file whose span misses the range is skipped without marking history incomplete", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), { sessionId: "old", timestamp: "2026-04-01T01:00:00.000Z", inputTokens: 1, outputTokens: 1 });
+    const adapter = new CountingClaudeAdapter(fixture.sourceRoot);
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+
+    const parsed = await importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range: utcRange("2026-04-01", "2026-04-01") });
+    const elsewhere = await importer.loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range: utcRange("2026-05-01", "2026-05-01") });
+
+    assert.equal(parsed.imports[0]?.records.length, 1);
+    assert.equal(elsewhere.imports[0]?.records.length, 0);
+    assert.equal(elsewhere.cache.historicalComplete, true, "already-parsed history is complete even when nothing is in range");
+    assert.equal(elsewhere.cache.status, "warm");
+    assert.deepEqual(elsewhere.sources[0], { provider: "claude", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 1, complete: true });
+    assert.equal(adapter.parseCount, 1);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test("cached importer discards an index written by a previous parser version", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeClaudeUsage(path.join(fixture.sourceRoot, "session.jsonl"), { sessionId: "s", timestamp: "2026-05-01T01:00:00.000Z", inputTokens: 3, outputTokens: 1 });
+    const adapter = new CountingClaudeAdapter(fixture.sourceRoot);
+    const range = utcRange("2026-05-01", "2026-05-01");
+    await new CachedUsageImporter(fixture.cacheRoot).loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range });
+    const indexPath = path.join(fixture.cacheRoot, "index.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as { parserVersion: string };
+    index.parserVersion = "local-json-v5-incremental";
+    await writeFile(indexPath, JSON.stringify(index), "utf8");
+
+    const upgraded = await new CachedUsageImporter(fixture.cacheRoot).loadForRange({ sources: [source(fixture.sourceRoot, adapter)], range });
+
+    assert.equal(upgraded.cache.status, "cold", "an older parser version forces a rebuild");
+    assert.equal(adapter.parseCount, 2);
+    assert.equal(upgraded.imports[0]?.records[0]?.tokens.input, 3);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test("cached importer reparses stale-span files that changed into the active range", async () => {
   const fixture = await createFixture();
   try {

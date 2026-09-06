@@ -254,8 +254,9 @@ test("grok adapter reads the official grok agent's ACP session updates: billed c
     await writeFile(path.join(session, "chat_history.jsonl"), JSON.stringify({ role: "user", content: "hi", usage: { inputTokens: 999 } }) + "\n");
     // a subagent run: the parent's turn_completed already includes it, and the
     // child is a sibling top-level session linked only by subagents/<id>/meta.json
-    await mkdir(path.join(session, "subagents", "01a0-child"), { recursive: true });
-    await writeFile(path.join(session, "subagents", "01a0-child", "meta.json"), JSON.stringify({ parent_session_id: "01a0-session", child_session_id: "01a0-child" }));
+    // the subagents/ entry name is the spawn id; the child's own session id comes from meta.json
+    await mkdir(path.join(session, "subagents", "spawn-7"), { recursive: true });
+    await writeFile(path.join(session, "subagents", "spawn-7", "meta.json"), JSON.stringify({ parent_session_id: "01a0-session", child_session_id: "01a0-child" }));
     const child = path.join(root, "%2Froot%2Fproj", "01a0-child");
     await mkdir(child, { recursive: true });
     await writeFile(path.join(child, "updates.jsonl"), acpTurn(1_788_677_390, "grok-4.6-build", { input: 5, output: 5, ticks: 100 }) + "\n");
@@ -267,6 +268,7 @@ test("grok adapter reads the official grok agent's ACP session updates: billed c
 
     assert.deepEqual(result.errors, []);
     assert.equal(result.records.length, 2, "child session usage is not counted twice");
+    assert.equal(result.records.reduce((total, record) => total + (record.cost?.amount ?? 0), 0), (124_208_800 + 32_150_400) / 1e10);
     assert.equal(result.records[0]?.sessionId, "01a0-session");
     assert.equal(result.records[0]?.startedAt, "2026-09-06T06:49:39.000Z");
     assert.deepEqual(result.records[0]?.tokens, { input: 36_343, output: 63 });
@@ -330,13 +332,85 @@ test("grok ACP parser leaves input intact when the stream stops reporting the in
     const session = path.join(root, "cwd", "01a0-session");
     await mkdir(session, { recursive: true });
     // total = input + output + cached: the headless convention, where input excludes the cache
-    await writeFile(path.join(session, "updates.jsonl"), acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, cached: 40, total: 150 }) + "\n");
+    const lines = [acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, cached: 40, total: 150 })];
+    // and a turn with no totalTokens at all: the invariant cannot be checked, so no split either
+    lines.push(acpTurn(1_788_677_380, "grok-4.6-build", { input: 100, output: 10, cached: 40 }).replace(/,"totalTokens":\d+/g, ""));
+    await writeFile(path.join(session, "updates.jsonl"), lines.join("\n") + "\n");
 
     const result = await new GrokUsageAdapter(root).importUsage();
 
-    assert.deepEqual(result.records[0]?.tokens, { input: 100, cacheRead: 40, output: 10 });
+    assert.deepEqual(result.records.map((record) => record.tokens), [{ input: 100, cacheRead: 40, output: 10 }, { input: 100, cacheRead: 40, output: 10 }]);
     assert.deepEqual(result.warnings.map((warning) => warning.code), ["token_convention_changed"]);
+    assert.match(result.warnings[0]?.message ?? "", /^2 grok turns/);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("grok ACP parser commits only the stable attempt: a torn first read leaves no phantom errors or doubled counters", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const session = path.join(root, "cwd", "01a0-session");
+    await mkdir(session, { recursive: true });
+    const log = path.join(session, "updates.jsonl");
+    // Final content: one turn violating the invariant (so the warning counter is exercised) plus a truncated trailing line.
+    await writeFile(log, acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, cached: 40, total: 150 }) + "\n{\"truncated\":");
+    const realStat = fs.stat.bind(fs);
+    let calls = 0;
+    // First attempt: before/after stats differ (writer active). Second attempt: stable.
+    (fs as { stat: typeof fs.stat }).stat = (async (target: string, ...rest: unknown[]) => {
+      const stat = await (realStat as (...args: unknown[]) => Promise<Stats>)(target, ...rest);
+      if (target === log) {
+        calls += 1;
+        return calls === 2 ? ({ ...stat, size: stat.size + 1, mtimeMs: stat.mtimeMs + 1, isFile: () => true, isDirectory: () => false } as Stats) : stat;
+      }
+      return stat;
+    }) as typeof fs.stat;
+    let result;
+    try {
+      result = await new GrokUsageAdapter(root).importUsage();
+    } finally {
+      (fs as { stat: typeof fs.stat }).stat = realStat;
+    }
+
+    assert.equal(result.records.length, 1);
+    assert.deepEqual(result.errors.map((error) => error.code), ["malformed_jsonl"], "the truncated line is reported once, not once per attempt");
+    assert.deepEqual(result.warnings.map((warning) => warning.code), ["token_convention_changed"]);
+    assert.match(result.warnings[0]?.message ?? "", /^1 grok turns/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("grok ACP parser keeps a recorded zero-cost turn as a billed $0 instead of re-pricing it", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const session = path.join(root, "cwd", "01a0-session");
+    await mkdir(session, { recursive: true });
+    await writeFile(path.join(session, "updates.jsonl"), acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, ticks: 0 }) + "\n");
+
+    const result = await new GrokUsageAdapter(root).importUsage();
+
+    assert.deepEqual(result.records[0]?.cost, { amount: 0, currency: "USD", source: "imported" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source detection does not let a grok agent tree with no updates.jsonl outrank a valid grok-cli database", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "ai-code-usage-home-"));
+  try {
+    const agentSession = path.join(home, ".grok", "sessions", "cwd", "01a0");
+    await mkdir(agentSession, { recursive: true });
+    await writeFile(path.join(agentSession, "summary.json"), "{}");
+    await writeFile(path.join(agentSession, "chat_history.jsonl"), "{}\n");
+    await mkdir(path.join(home, ".grok-cli"), { recursive: true });
+    await writeSessionDb(path.join(home, ".grok-cli", "session.db"), [textEvent("e1", "s", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
+
+    const detected = await new SourceDetectionService(home, {}).detect();
+
+    assert.deepEqual(detected.map((source) => source.sourcePath), [path.join(home, ".grok-cli", "session.db")]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
   }
 });

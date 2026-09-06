@@ -48,12 +48,12 @@ export class PricingService {
       return { available: false, reason: this.metadata.reason };
     }
 
-    if (!record.model) {
-      return { available: false, reason: "unknown_model" };
-    }
-
     if (record.pricing === "unavailable") {
       return { available: false, reason: "ambiguous_tokens" };
+    }
+
+    if (!record.model) {
+      return { available: false, reason: "unknown_model" };
     }
 
     if (tokenTotal(record.tokens) === 0) {

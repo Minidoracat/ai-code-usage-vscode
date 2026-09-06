@@ -28,7 +28,7 @@ export class SourceDetectionService {
       if (detected.some((source) => source.provider === candidate.provider)) {
         continue;
       }
-      const files = await countUsageFiles(candidate.sourcePath, 0);
+      const files = await countUsageFiles(candidate.sourcePath, 0, usageFileNameFilter(candidate.provider));
       if (files > 0) {
         detected.push({ ...candidate, files });
       }
@@ -99,7 +99,20 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
-async function countUsageFiles(sourcePath: string, depth: number): Promise<number> {
+/**
+ * Which file names count as usage for detection. Must agree with what the
+ * provider's adapter actually parses, otherwise detection can pick a root the
+ * importer then reads as empty (e.g. a grok agent tree that only has
+ * summary.json / chat_history.jsonl beside a valid grok-cli database).
+ */
+export function usageFileNameFilter(provider: UsageProvider): (name: string) => boolean {
+  if (provider === "grok") {
+    return (name) => name === "updates.jsonl" || name === "session.db";
+  }
+  return (name) => /\.(json|jsonl)$/i.test(name) && !/\.meta\.json$/i.test(name);
+}
+
+async function countUsageFiles(sourcePath: string, depth: number, accept: (name: string) => boolean): Promise<number> {
   if (depth > maxProbeDepth) {
     return 0;
   }
@@ -107,7 +120,7 @@ async function countUsageFiles(sourcePath: string, depth: number): Promise<numbe
   try {
     const stat = await fs.stat(sourcePath);
     if (stat.isFile()) {
-      return /\.(json|jsonl|db|sqlite)$/i.test(sourcePath) ? 1 : 0;
+      return accept(path.basename(sourcePath)) ? 1 : 0;
     }
     if (!stat.isDirectory()) {
       return 0;
@@ -126,8 +139,8 @@ async function countUsageFiles(sourcePath: string, depth: number): Promise<numbe
   for (const entry of entries) {
     const fullPath = path.join(sourcePath, entry.name);
     if (entry.isDirectory()) {
-      files += await countUsageFiles(fullPath, depth + 1);
-    } else if (entry.isFile() && /\.(json|jsonl)$/i.test(entry.name)) {
+      files += await countUsageFiles(fullPath, depth + 1, accept);
+    } else if (entry.isFile() && accept(entry.name)) {
       files += 1;
     }
   }

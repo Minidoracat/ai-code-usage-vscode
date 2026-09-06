@@ -2,8 +2,9 @@ import { existsSync, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AdapterImportResult, ImportIssue, SourceMeta, UsageRecord } from "../domain/types";
-import { JsonUsageAdapter, normalizeIso, sourceMeta, type UsageFileListResult } from "./JsonUsageAdapter";
+import { JsonUsageAdapter, mapWithConcurrency, normalizeIso, sourceMeta, type UsageFileListResult } from "./JsonUsageAdapter";
 import { streamJsonlLines } from "./jsonlStream";
+import { usageFileNameFilter } from "../services/SourceDetectionService";
 
 /**
  * Two Grok tools write local usage:
@@ -25,8 +26,12 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     super(grokPath);
   }
 
+  public override acceptsFilePath(): boolean {
+    return true; // grok-cli's session.db
+  }
+
   protected override isUsageFile(name: string): boolean {
-    return name === "updates.jsonl" || name === "session.db";
+    return usageFileNameFilter("grok")(name);
   }
 
   /**
@@ -36,9 +41,9 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
    * the fingerprint so those transitions trigger a reparse.
    */
   public override async listUsageFiles(options?: { usagePath?: string }): Promise<UsageFileListResult> {
-    // The folder picker and settings UI hand us `~/.grok-cli`; the source is
-    // the single `session.db` inside it, not the JSON files the base scanner
-    // would otherwise collect (auth.json is not usage data).
+    // The folder picker and settings UI may hand us `~/.grok-cli`; a directory
+    // that directly contains `session.db` is read as that database (auth.json
+    // beside it is not usage data).
     const listed = await super.listUsageFiles({ usagePath: await resolveSessionDb(options?.usagePath ?? this.grokPath) });
     // Subagent runs are separate top-level sessions whose usage the parent's
     // turn_completed already includes (verified: parent modelCalls and cost
@@ -46,7 +51,8 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     // subagents/<child>/meta.json, so collect those ids and drop the children.
     const childIds = await subagentSessionIds(listed.files.map((file) => path.dirname(file.filePath)));
     listed.files = listed.files.filter((file) => !childIds.has(path.basename(path.dirname(file.filePath))));
-    for (const file of listed.files) {
+    // Sidecars only exist beside SQLite databases.
+    await mapWithConcurrency(listed.files.filter((file) => file.filePath.endsWith(".db")), sidecarStatConcurrency, async (file) => {
       for (const suffix of ["-journal", "-wal"]) {
         try {
           const sidecar = await fs.stat(file.filePath + suffix);
@@ -56,7 +62,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
           // no sidecar
         }
       }
-    }
+    });
     return listed;
   }
 
@@ -104,6 +110,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       return;
     }
     let skipped = 0;
+    let badTimestamp = 0;
     let ambiguous = 0;
     for (const row of rows) {
       const tokens: UsageRecord["tokens"] = {};
@@ -117,7 +124,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       }
       const startedAt = normalizeIso(row.started_at);
       if (!startedAt) {
-        skipped += 1;
+        badTimestamp += 1;
         continue;
       }
       const endedAt = normalizeIso(row.completed_at) ?? startedAt;
@@ -147,7 +154,10 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       result.warnings.push(issue("warning", "ambiguous_cache_tokens", `${ambiguous} grok-cli events have cache hits whose input_tokens semantics grok-cli does not record; they are counted but not priced.`, filePath));
     }
     if (skipped > 0) {
-      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events carry no token usage or no timestamp (image/video/audio) and were skipped.`, filePath));
+      result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events (image/video/audio) carry no token usage and were skipped.`, filePath));
+    }
+    if (badTimestamp > 0) {
+      result.warnings.push(issue("warning", "invalid_timestamp", `${badTimestamp} grok-cli events have an unreadable started_at and were skipped.`, filePath));
     }
   }
 
@@ -163,70 +173,77 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     const meta = sourceMeta(filePath, "jsonl", readAt);
     result.sourceMeta.push(meta);
     const sessionId = path.basename(path.dirname(filePath));
-    const rows: UsageRecord[] = [];
-    let unsplit = 0;
-    const collect = (line: string, lineNumber: number): void => {
-      if (!line.trim()) {
-        return;
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch (error) {
-        result.errors.push(issue("error", "malformed_jsonl", error instanceof Error ? error.message : String(error), filePath, lineNumber));
-        return;
-      }
-      const event = asAcpTurn(parsed);
-      if (!event) {
-        return;
-      }
-      const observedAt = new Date(event.timestamp * 1000).toISOString();
-      for (const [model, usage] of Object.entries(event.modelUsage)) {
-        const tokens: UsageRecord["tokens"] = {};
-        const cost = typeof usage.costUsdTicks === "number" && usage.costUsdTicks > 0
-          ? { amount: usage.costUsdTicks / 1e10, currency: "USD", source: "imported" as const }
-          : undefined;
-        const cached = usage.cachedReadTokens ?? 0;
-        // In the ACP stream inputTokens includes cached reads (totalTokens =
-        // inputTokens + outputTokens); the headless JSON output uses the other
-        // convention. Only split when the stream's own invariant holds so a
-        // format change cannot silently under-count input.
-        const inclusive = usage.totalTokens === undefined || usage.totalTokens === usage.inputTokens + usage.outputTokens;
-        if (!inclusive) {
-          unsplit += 1;
+
+    // Everything an attempt produces stays in its own buffer; only the stable
+    // attempt is committed (the same contract as readJsonLinesStreaming), so a
+    // torn first read cannot leave phantom errors or doubled counters behind.
+    type Attempt = { rows: UsageRecord[]; errors: ImportIssue[]; unsplit: number };
+    const attempt = async (): Promise<Attempt> => {
+      const out: Attempt = { rows: [], errors: [], unsplit: 0 };
+      const collect = (line: string, lineNumber: number): void => {
+        if (!line.trim()) {
+          return;
         }
-        const input = inclusive ? usage.inputTokens - cached : usage.inputTokens;
-        if (input > 0) tokens.input = input;
-        if (cached > 0) tokens.cacheRead = cached;
-        if (usage.outputTokens > 0) tokens.output = usage.outputTokens;
-        if (Object.keys(tokens).length === 0) {
-          continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(line);
+        } catch (error) {
+          out.errors.push(issue("error", "malformed_jsonl", error instanceof Error ? error.message : String(error), filePath, lineNumber));
+          return;
         }
-        rows.push({ provider: "grok", model, sessionId, startedAt: observedAt, observedAt, tokens, cost, source: meta, raw: parsed });
-      }
-    };
-    const out = await this.readStable(filePath, async () => {
-      rows.length = 0;
+        const event = asAcpTurn(parsed);
+        if (!event) {
+          return;
+        }
+        const observedAt = new Date(event.timestamp * 1000).toISOString();
+        for (const [model, usage] of Object.entries(event.modelUsage)) {
+          const tokens: UsageRecord["tokens"] = {};
+          // A recorded zero is a real bill (free turn); only a missing field falls back to the catalog.
+          const cost = usage.costUsdTicks !== undefined
+            ? { amount: usage.costUsdTicks / 1e10, currency: "USD", source: "imported" as const }
+            : undefined;
+          const cached = usage.cachedReadTokens ?? 0;
+          // In the ACP stream inputTokens includes cached reads and the event
+          // states totalTokens = inputTokens + outputTokens. Split only when
+          // that invariant is present and holds; a missing or different total
+          // means the convention is unknown, so input is left intact.
+          const inclusive = usage.totalTokens === usage.inputTokens + usage.outputTokens;
+          if (!inclusive) {
+            out.unsplit += 1;
+          }
+          const input = inclusive ? usage.inputTokens - cached : usage.inputTokens;
+          if (input > 0) tokens.input = input;
+          if (cached > 0) tokens.cacheRead = cached;
+          if (usage.outputTokens > 0) tokens.output = usage.outputTokens;
+          if (Object.keys(tokens).length === 0) {
+            continue;
+          }
+          out.rows.push({ provider: "grok", model, sessionId, startedAt: observedAt, observedAt, tokens, cost, source: meta, raw: parsed });
+        }
+      };
       const stream = await streamJsonlLines(filePath, collect);
       if (stream.partialTail !== undefined) {
         collect(stream.partialTail, stream.lineCount + 1);
       }
-      return rows.slice();
-    }).catch((error: unknown) => {
+      return out;
+    };
+
+    let out: Attempt | null | undefined;
+    try {
+      out = await this.readStable(filePath, attempt);
+    } catch (error) {
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
-      return null;
-    });
-    if (out === null) {
       return;
     }
     if (out === undefined) {
       result.warnings.push(issue("warning", "file_transient", "grok session log changed while reading; skipped for this refresh.", filePath));
       return;
     }
-    if (unsplit > 0) {
-      result.warnings.push(issue("warning", "token_convention_changed", `${unsplit} grok turns no longer report totalTokens = inputTokens + outputTokens; cached reads were left inside input.`, filePath));
+    result.errors.push(...out.errors);
+    if (out.unsplit > 0) {
+      result.warnings.push(issue("warning", "token_convention_changed", `${out.unsplit} grok turns no longer report totalTokens = inputTokens + outputTokens; cached reads were left inside input.`, filePath));
     }
-    result.records.push(...out);
+    result.records.push(...out.rows);
   }
 }
 
@@ -268,15 +285,17 @@ function asAcpTurn(value: unknown): AcpTurn | undefined {
 
 export const grokParserVersion = "grok-sqlite-v1";
 
+const sidecarStatConcurrency = 16;
+
 /** Reads `subagents/<child>/meta.json` under each session dir and returns the child session ids. */
 async function subagentSessionIds(sessionDirs: string[]): Promise<Set<string>> {
   const ids = new Set<string>();
-  for (const dir of new Set(sessionDirs)) {
+  await mapWithConcurrency([...new Set(sessionDirs)], sidecarStatConcurrency, async (dir) => {
     let children: string[];
     try {
       children = await fs.readdir(path.join(dir, "subagents"));
     } catch {
-      continue;
+      return;
     }
     for (const child of children) {
       try {
@@ -286,11 +305,11 @@ async function subagentSessionIds(sessionDirs: string[]): Promise<Set<string>> {
         ids.add(child);
       }
     }
-  }
+  });
   return ids;
 }
 
-/** `~/.grok-cli` (folder picker / settings) means its `session.db`; any other directory is scanned for `updates.jsonl`. */
+/** A directory that directly contains `session.db` (grok-cli's home) is read as that database; any other directory is scanned for `updates.jsonl`. */
 async function resolveSessionDb(usagePath: string | undefined): Promise<string | undefined> {
   if (!usagePath) {
     return usagePath;

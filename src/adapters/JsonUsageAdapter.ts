@@ -14,7 +14,7 @@ import { streamJsonlLines } from "./jsonlStream";
 
 // Bump whenever parsing or diagnostic semantics change so stale caches (and
 // their persisted warnings) invalidate automatically on upgrade.
-export const jsonUsageParserVersion = "local-json-v5-incremental";
+export const jsonUsageParserVersion = "local-json-v6-grok";
 const maxDirectoryDepth = 6;
 const maxFilesPerSource = 10_000;
 const directoryReadConcurrency = 8;
@@ -188,6 +188,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
 
     return files.slice(0, maxFilesPerSource);
+  }
+
+  /** Whether a single file (not only a directory) is a valid usage path for this adapter. */
+  public acceptsFilePath(): boolean {
+    return false;
   }
 
   /** Which file names inside a usage directory are parsed. Adapters with their own formats override this. */
@@ -677,7 +682,7 @@ class AsyncLimiter {
   }
 }
 
-async function mapWithConcurrency<T, R>(
+export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
   worker: (item: T, index: number) => Promise<R>,

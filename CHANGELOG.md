@@ -6,12 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `grok` provider for xAI's `grok` coding agent (`~/.grok/sessions/**/updates.jsonl`: per-turn billed cost from `costUsdTicks`, with cached reads split out of `inputTokens`) and for grok-cli: reads `~/.grok-cli/session.db` (SQLite via the bundled sql.js wasm runtime, no native modules) and imports every text request with its token counts; cost comes from the xAI catalog rules rather than grok-cli's own estimate. Auto-detected, configurable via `aiCodingUsage.grok.usagePath`.
+- `grok` provider for xAI's `grok` coding agent (`~/.grok/sessions/**/updates.jsonl`: per-turn billed cost from `costUsdTicks`, cached reads split out of `inputTokens`, subagent child sessions excluded because the parent turn already includes them) and for grok-cli (`~/.grok-cli/session.db`, SQLite via the bundled sql.js wasm runtime, no native modules): text requests are imported with their token counts; cache-free rows price from the xAI catalog, rows with cache hits are counted but not priced because grok-cli does not record which `input_tokens` convention it stored. Auto-detected, configurable via `aiCodingUsage.grok.usagePath`.
 - xAI Grok pricing (grok-4.6 / 4.5 / 4.3 / 4.20 / build-0.1) with the 200K long-context tier, used for grok-cli records without a recorded cost and for pi transcripts that ran Grok models.
 
 ### Changed
 
 - Webview provider filter and dashboard coverage validation accept every supported provider instead of a hard-coded list.
+- Cache format bumped to `local-json-v6-grok`: existing caches are rebuilt on first launch (grok-cli record semantics changed).
+- `Detect Local AI Usage Sources` can re-point a provider whose configured path was scanned completely and holds no usage; the dashboard also warns when such a path exists alongside a detectable default, and issues follow the selected provider filter.
 
 ## 0.1.7 - 2026-09-05
 

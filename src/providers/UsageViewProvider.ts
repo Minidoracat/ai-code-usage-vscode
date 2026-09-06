@@ -393,11 +393,10 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
    * an empty "today" or a deliberately archived path never triggers it.
    */
   private async flagStaleConfiguredSources(load: CachedUsageLoadResult): Promise<void> {
-    // Read errors explain an empty source on their own; only a cleanly parsed, empty source is "stale".
-    const dead = load.sources.filter(
-      (source) => source.sourcePath && source.complete && source.cachedRecords === 0
-        && !load.imports.some((item) => item.provider === source.provider && item.errors.length > 0),
-    );
+    if (!vscode.workspace.getConfiguration("aiCodingUsage").get<boolean>("autoDetectLocalSources", true)) {
+      return; // the user opted out of background detection
+    }
+    const dead = emptyConfiguredSources(load);
     if (dead.length === 0) {
       return;
     }
@@ -725,10 +724,12 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    // An explicit "Detect Local AI Usage Sources" run may re-point providers that
-    // were auto-configured earlier: once a path is written, the automatic path
-    // would otherwise never revisit it even when a newer default exists.
-    const candidates = force ? sourcePaths.map((source) => source.provider) : sourcePaths.filter((source) => !source.sourcePath).map((source) => source.provider);
+    // An explicit "Detect Local AI Usage Sources" run may also re-point a
+    // provider whose configured path was scanned completely and holds no usage
+    // at all (a stale auto-detected value). A configured path with data, or one
+    // we could not read yet, is the user's choice and is never overwritten.
+    const empty = force && this.lastLoad ? new Set(emptyConfiguredSources(this.lastLoad.imports).map((source) => source.provider)) : new Set<UsageProvider>();
+    const candidates = sourcePaths.filter((source) => !source.sourcePath || empty.has(source.provider)).map((source) => source.provider);
     if (candidates.length === 0) {
       return;
     }
@@ -845,7 +846,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   private async chooseUsageFolders(config: vscode.WorkspaceConfiguration, providers: UsageProvider[]): Promise<void> {
     for (const provider of providers) {
       const selected = await vscode.window.showOpenDialog({
-        canSelectFiles: provider === "grok",
+        canSelectFiles: usageAdapterForProvider(provider).acceptsFilePath(),
         canSelectFolders: true,
         canSelectMany: false,
         openLabel: this.t("modal.useFolder"),
@@ -947,6 +948,21 @@ function requestIdFrom(message: unknown): string {
     }
   }
   return "unknown";
+}
+
+/**
+ * Configured sources that were scanned to completion, yielded no record on any
+ * date, and reported no read problem. Read failures (errors, or the transient /
+ * WAL warnings that mean "no trustworthy snapshot yet") make a source
+ * undetermined, not empty.
+ */
+function emptyConfiguredSources(load: CachedUsageLoadResult): CachedUsageLoadResult["sources"] {
+  const unreadable = (issue: ImportIssue) => issue.code === "file_transient" || issue.code === "wal_unsupported" || issue.code === "file_unreadable";
+  return load.sources.filter((source) => {
+    const item = load.imports.find((entry) => entry.provider === source.provider);
+    return Boolean(source.sourcePath) && source.complete && source.cachedRecords === 0
+      && item !== undefined && item.errors.length === 0 && !item.warnings.some(unreadable);
+  });
 }
 
 /** Builds the adapter matching a provider. */
