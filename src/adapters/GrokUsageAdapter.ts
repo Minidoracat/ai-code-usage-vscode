@@ -30,15 +30,6 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
   }
 
   /**
-   * `subagents/<child>/updates.jsonl` are child sessions. Whether the parent's
-   * `turn_completed` usage already aggregates them is undocumented and could not
-   * be observed locally, so they are skipped rather than risk double billing.
-   */
-  protected override isUsageDirectory(name: string): boolean {
-    return name !== "subagents";
-  }
-
-  /**
    * The cache reuses a file while its size/mtime are unchanged, but a
    * `-journal` / `-wal` appearing or disappearing beside the database changes
    * what we can read without touching the main file. Fold their sizes into
@@ -49,6 +40,12 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     // the single `session.db` inside it, not the JSON files the base scanner
     // would otherwise collect (auth.json is not usage data).
     const listed = await super.listUsageFiles({ usagePath: await resolveSessionDb(options?.usagePath ?? this.grokPath) });
+    // Subagent runs are separate top-level sessions whose usage the parent's
+    // turn_completed already includes (verified: parent modelCalls and cost
+    // cover the child's call). The only link is the parent's
+    // subagents/<child>/meta.json, so collect those ids and drop the children.
+    const childIds = await subagentSessionIds(listed.files.map((file) => path.dirname(file.filePath)));
+    listed.files = listed.files.filter((file) => !childIds.has(path.basename(path.dirname(file.filePath))));
     for (const file of listed.files) {
       for (const suffix of ["-journal", "-wal"]) {
         try {
@@ -259,6 +256,28 @@ function asAcpTurn(value: unknown): AcpTurn | undefined {
 }
 
 export const grokParserVersion = "grok-sqlite-v1";
+
+/** Reads `subagents/<child>/meta.json` under each session dir and returns the child session ids. */
+async function subagentSessionIds(sessionDirs: string[]): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const dir of new Set(sessionDirs)) {
+    let children: string[];
+    try {
+      children = await fs.readdir(path.join(dir, "subagents"));
+    } catch {
+      continue;
+    }
+    for (const child of children) {
+      try {
+        const meta = JSON.parse(await fs.readFile(path.join(dir, "subagents", child, "meta.json"), "utf8")) as { child_session_id?: unknown };
+        ids.add(typeof meta.child_session_id === "string" ? meta.child_session_id : child);
+      } catch {
+        ids.add(child);
+      }
+    }
+  }
+  return ids;
+}
 
 /** `~/.grok-cli` (folder picker / settings) means its `session.db`; any other directory is scanned for `updates.jsonl`. */
 async function resolveSessionDb(usagePath: string | undefined): Promise<string | undefined> {

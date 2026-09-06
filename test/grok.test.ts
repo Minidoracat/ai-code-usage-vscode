@@ -250,10 +250,15 @@ test("grok adapter reads the official grok agent's ACP session updates: billed c
       acpTurn(1_788_677_379, "grok-4.6-build", { input: 36_343, output: 63, ticks: 124_208_800 }),
       acpTurn(1_788_677_381, "grok-4.6-build", { input: 36_426, output: 66, cached: 36_224, ticks: 32_150_400 }),
     ].join("\n") + "\n");
-    // sibling files the base scanner would otherwise pick up, and a child session that must not be double counted
+    // sibling files the base scanner would otherwise pick up
     await writeFile(path.join(session, "chat_history.jsonl"), JSON.stringify({ role: "user", content: "hi", usage: { inputTokens: 999 } }) + "\n");
-    await mkdir(path.join(session, "subagents", "child"), { recursive: true });
-    await writeFile(path.join(session, "subagents", "child", "updates.jsonl"), acpTurn(1_788_677_390, "grok-4.6-build", { input: 5, output: 5, ticks: 100 }) + "\n");
+    // a subagent run: the parent's turn_completed already includes it, and the
+    // child is a sibling top-level session linked only by subagents/<id>/meta.json
+    await mkdir(path.join(session, "subagents", "01a0-child"), { recursive: true });
+    await writeFile(path.join(session, "subagents", "01a0-child", "meta.json"), JSON.stringify({ parent_session_id: "01a0-session", child_session_id: "01a0-child" }));
+    const child = path.join(root, "%2Froot%2Fproj", "01a0-child");
+    await mkdir(child, { recursive: true });
+    await writeFile(path.join(child, "updates.jsonl"), acpTurn(1_788_677_390, "grok-4.6-build", { input: 5, output: 5, ticks: 100 }) + "\n");
     await writeFile(path.join(session, "summary.json"), JSON.stringify({ info: { id: "x" } }));
 
     const result = await new GrokUsageAdapter(root).importUsage();
@@ -261,7 +266,7 @@ test("grok adapter reads the official grok agent's ACP session updates: billed c
     const pricing = new PricingService(catalog);
 
     assert.deepEqual(result.errors, []);
-    assert.equal(result.records.length, 2);
+    assert.equal(result.records.length, 2, "child session usage is not counted twice");
     assert.equal(result.records[0]?.sessionId, "01a0-session");
     assert.equal(result.records[0]?.startedAt, "2026-09-06T06:49:39.000Z");
     assert.deepEqual(result.records[0]?.tokens, { input: 36_343, output: 63 });
