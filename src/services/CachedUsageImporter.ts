@@ -31,6 +31,19 @@ export type CachedUsageState = {
 export type CachedUsageLoadResult = {
   imports: AdapterImportResult[];
   cache: CachedUsageState;
+  /** Per configured source: what the scan found, independent of the selected range. */
+  sources: CachedSourceSummary[];
+};
+
+export type CachedSourceSummary = {
+  provider: UsageProvider;
+  sourcePath: string;
+  /** Usage files found under the configured path. */
+  files: number;
+  /** Records parsed from those files so far (all dates, not just the range). */
+  cachedRecords: number;
+  /** True once every found file has been parsed at least once. */
+  complete: boolean;
 };
 
 export type CachedUsageSource = {
@@ -113,6 +126,8 @@ type LoadProviderResult = {
   importResult: AdapterImportResult;
   skippedHistoricalFiles: number;
   parsedFiles: number;
+  files: number;
+  cachedRecords: number;
 };
 
 type RangeReadResult = {
@@ -188,6 +203,7 @@ export class CachedUsageImporter {
     let parsedFiles = 0;
     let rangeComplete = true;
     const imports: AdapterImportResult[] = [];
+    const sources: CachedSourceSummary[] = [];
     const forced = Boolean(input.forceReparse);
 
     const cacheState = (state: Partial<CachedUsageState> = {}): CachedUsageState => ({
@@ -205,6 +221,13 @@ export class CachedUsageImporter {
       await report({ rangeComplete: false }, { flush: true });
       const loaded = await this.loadProvider(session, source, input.range, progress, report, forced);
       imports.push(loaded.importResult);
+      sources.push({
+        provider: source.provider,
+        sourcePath: source.sourcePath,
+        files: loaded.files,
+        cachedRecords: loaded.cachedRecords,
+        complete: loaded.skippedHistoricalFiles === 0,
+      });
       parsedFiles += loaded.parsedFiles;
       if (loaded.skippedHistoricalFiles > 0) {
         historicalComplete = false;
@@ -227,6 +250,7 @@ export class CachedUsageImporter {
 
     return {
       imports,
+      sources,
       cache: {
         status: parsedFiles > 0 ? (forced ? "rebuilding" : "cold") : historicalComplete ? "warm" : "partial",
         rangeComplete,
@@ -257,7 +281,7 @@ export class CachedUsageImporter {
         importResult.warnings = importResult.warnings.filter((warning) => warning.code !== "missing_path");
         importResult.warnings.push(source.issue);
       }
-      return { importResult, skippedHistoricalFiles: 0, parsedFiles: 0 };
+      return { importResult, skippedHistoricalFiles: 0, parsedFiles: 0, files: 0, cachedRecords: 0 };
     }
 
     progress.filesTotal += listed.files.length;
@@ -355,7 +379,10 @@ export class CachedUsageImporter {
       importResult.warnings.push(source.issue);
     }
 
-    return { importResult, skippedHistoricalFiles, parsedFiles };
+    const cachedRecords = Object.values(index.files)
+      .filter((entry) => entry.provider === source.provider && entry.sourceRootId === sourceRootId)
+      .reduce((total, entry) => total + entry.records, 0);
+    return { importResult, skippedHistoricalFiles, parsedFiles, files: listed.files.length, cachedRecords };
   }
 
   private async writeParsedFile(

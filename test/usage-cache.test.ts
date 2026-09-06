@@ -209,6 +209,24 @@ test("cached importer retries a file whose very first read failed", async () => 
   }
 });
 
+test("source summary reports a fully parsed source with no usable records as empty, independent of the range", async () => {
+  const fixture = await createFixture();
+  try {
+    // One file, parsed, zero usage records: the situation a stale auto-detected path leaves behind.
+    await writeFile(path.join(fixture.sourceRoot, "session.jsonl"), JSON.stringify({ type: "user", message: "no usage here" }) + "\n", "utf8");
+    const importer = new CachedUsageImporter(fixture.cacheRoot);
+
+    const load = await importer.loadForRange({
+      sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
+      range: utcRange("2026-05-01", "2026-05-01"),
+    });
+
+    assert.deepEqual(load.sources[0], { provider: "claude", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 0, complete: true });
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test("cached importer reuses unchanged files with cached diagnostics and no records", async () => {
   const fixture = await createFixture();
   try {
@@ -458,6 +476,8 @@ test("cached importer skips cold files dated after the range until a matching ra
 
     assert.equal(early.imports[0]?.records.length, 0);
     assert.equal(early.cache.historicalComplete, false);
+    // A cold-skipped file is "not parsed yet", not "no data": the source summary must not read as empty.
+    assert.deepEqual(early.sources[0], { provider: "codex", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 0, complete: false });
 
     const matching = await importer.loadForRange({
       sources: [source("codex", fixture.sourceRoot, new CodexUsageAdapter(fixture.sourceRoot))],
@@ -465,6 +485,7 @@ test("cached importer skips cold files dated after the range until a matching ra
     });
 
     assert.equal(matching.imports[0]?.records.length, 1);
+    assert.deepEqual(matching.sources[0], { provider: "codex", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 1, complete: true });
   } finally {
     await fixture.dispose();
   }

@@ -9,7 +9,6 @@ import { tokenTotal } from "../domain/math";
 import { convertCost, resolveDisplayCurrencyState, type DisplayCurrencyState } from "../domain/currency";
 import { defaultTimeRangeKind, normalizeTimeRangeKind } from "../domain/timeRange";
 import type {
-  AdapterImportResult,
   ImportIssue,
   PricingCatalog,
   TokenBreakdown,
@@ -27,7 +26,7 @@ import { type MessageKey, messagesFor, normalizeLocale, translate } from "../i18
 import pricingCatalog from "../pricing/catalog.json";
 import { PricingService } from "../services/PricingService";
 import { defaultAutoRefreshIntervalSeconds, normalizeAutoRefreshIntervalSeconds } from "../services/AutoRefreshService";
-import { CachedUsageImporter, type CachedUsageProgress, type CachedUsageState } from "../services/CachedUsageImporter";
+import { CachedUsageImporter, type CachedUsageLoadResult, type CachedUsageProgress, type CachedUsageState } from "../services/CachedUsageImporter";
 import { fetchPublicExchangeRates, type PublicExchangeRates } from "../services/ExchangeRateService";
 import { isNativeUsagePath, SourceDetectionService, usageSourceCandidates } from "../services/SourceDetectionService";
 import { TimeRangeService } from "../services/TimeRangeService";
@@ -376,7 +375,7 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     if (!load) {
       await this.postLoadingData("readingSources", run);
       load = await this.importUsageCached(config, range, run, Boolean(options.forceImport));
-      await this.flagStaleConfiguredSources(config, load.imports);
+      await this.flagStaleConfiguredSources(load);
       this.lastLoad = { key: loadKey, imports: load };
     }
     // A reused import replays no progress, so its historical cache status
@@ -386,28 +385,29 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * A configured path that yields nothing while a detectable default has files
-   * is almost always a stale auto-detected value (a tool changed where it
-   * writes). The empty dashboard says nothing by itself, so attach a warning
-   * that names the alternative and the command that re-points it.
+   * A configured path whose every usage file has been parsed and yielded no
+   * record at all, while a detectable default location has usage files, is
+   * almost always a stale auto-detected value (the tool moved where it
+   * writes). Attach a warning naming the alternative and the command that
+   * re-points it. Keyed on the whole-source scan, not the selected range, so
+   * an empty "today" or a deliberately archived path never triggers it.
    */
-  private async flagStaleConfiguredSources(config: vscode.WorkspaceConfiguration, imports: AdapterImportResult[]): Promise<void> {
-    const configured = this.configuredUsagePaths(config).filter((source) => source.sourcePath && !source.issue);
-    const silent = imports.filter((item) => item.records.length === 0 && item.errors.length === 0 && configured.some((source) => source.provider === item.provider));
-    if (silent.length === 0) {
+  private async flagStaleConfiguredSources(load: CachedUsageLoadResult): Promise<void> {
+    const dead = load.sources.filter((source) => source.sourcePath && source.complete && source.cachedRecords === 0);
+    if (dead.length === 0) {
       return;
     }
     const detected = await new SourceDetectionService(undefined, undefined, undefined, this.globalStorageRoot()).detect();
-    for (const item of silent) {
-      const current = configured.find((source) => source.provider === item.provider)?.sourcePath;
-      const alternative = detected.find((source) => source.provider === item.provider && source.sourcePath !== current);
-      if (alternative) {
-        item.warnings.push({
+    for (const source of dead) {
+      const alternative = detected.find((candidate) => candidate.provider === source.provider && candidate.sourcePath !== source.sourcePath);
+      const target = load.imports.find((item) => item.provider === source.provider);
+      if (alternative && target) {
+        target.warnings.push({
           severity: "warning",
           code: "source_alternative_detected",
           message: `Configured path has no usage records, but ${alternative.files} usage file(s) were found at ${alternative.sourcePath}. Run "Detect Local AI Usage Sources" to switch.`,
-          sourcePath: current,
-          provider: item.provider,
+          sourcePath: source.sourcePath,
+          provider: source.provider,
         });
       }
     }
