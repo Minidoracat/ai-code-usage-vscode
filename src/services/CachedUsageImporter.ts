@@ -314,9 +314,16 @@ export class CachedUsageImporter {
       // bump either).
       const cachedReadFailed = Boolean(cached && readFailed(cached.diagnostics));
       const fingerprintUnchanged = Boolean(cached && !cachedReadFailed && cached.mtimeMs === file.mtimeMs && cached.size === file.size);
-      if (!forceReparse && shouldSkipFileForRange(source.provider, file, cached, fingerprintUnchanged, range)) {
+      const skip = forceReparse ? false : shouldSkipFileForRange(source.provider, file, cached, fingerprintUnchanged, range);
+      if (skip === "backlog") {
+        // Never parsed and pruned for this range: real historical backlog.
         skippedHistoricalFiles += 1;
         await report({ historicalComplete: false, rangeComplete: false });
+        continue;
+      }
+      if (skip === "parsed") {
+        // Fully parsed before and unchanged; nothing to do for this range.
+        await report({ rangeComplete: false });
         continue;
       }
       if (!forceReparse && fingerprintUnchanged) {
@@ -781,12 +788,23 @@ function createProgressEmitter(
 
 const coldSkipMtimeSlackMs = 86_400_000;
 
-function shouldSkipFileForRange(provider: UsageProvider, file: UsageFileRef, cached: CachedFileEntry | undefined, fingerprintUnchanged: boolean, range: TimeRange): boolean {
+/**
+ * "parsed": the file is cached, unchanged, and cannot contribute to this range
+ * (known empty, or its span misses the range) — nothing left to read.
+ * "backlog": never parsed and pruned for this range — still owed to history.
+ */
+function shouldSkipFileForRange(
+  provider: UsageProvider,
+  file: UsageFileRef,
+  cached: CachedFileEntry | undefined,
+  fingerprintUnchanged: boolean,
+  range: TimeRange,
+): "parsed" | "backlog" | false {
   if (fingerprintUnchanged && cached?.records === 0 && cached.diagnostics.errors.length === 0) {
-    return true;
+    return "parsed";
   }
   if (fingerprintUnchanged && cached?.fileSpanUtcStart && cached.fileSpanUtcEnd) {
-    return !cachedFileTouchesRange(cached, range);
+    return cachedFileTouchesRange(cached, range) ? false : "parsed";
   }
   if (!cached) {
     // Cold pruning. A session file cannot contain records earlier than its
@@ -796,17 +814,17 @@ function shouldSkipFileForRange(provider: UsageProvider, file: UsageFileRef, cac
     // slack absorbs clock skew and local-vs-UTC offsets. Skipped files are
     // counted as historical backlog and get parsed when a range needs them.
     if (file.pathDateKey && file.pathDateKey > shiftDateKey(range.endDate, 1)) {
-      return true;
+      return "backlog";
     }
     if (file.mtimeMs < new Date(range.start).getTime() - coldSkipMtimeSlackMs) {
-      return true;
+      return "backlog";
     }
   }
   if (provider === "codex") {
     return false;
   }
   if (!cached && file.pathDateKey) {
-    return file.pathDateKey < shiftDateKey(range.startDate, -1) || file.pathDateKey > shiftDateKey(range.endDate, 1);
+    return file.pathDateKey < shiftDateKey(range.startDate, -1) || file.pathDateKey > shiftDateKey(range.endDate, 1) ? "backlog" : false;
   }
   return false;
 }

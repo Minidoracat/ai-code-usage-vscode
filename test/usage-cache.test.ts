@@ -216,12 +216,17 @@ test("source summary reports a fully parsed source with no usable records as emp
     await writeFile(path.join(fixture.sourceRoot, "session.jsonl"), JSON.stringify({ type: "user", message: "no usage here" }) + "\n", "utf8");
     const importer = new CachedUsageImporter(fixture.cacheRoot);
 
-    const load = await importer.loadForRange({
+    const load = () => importer.loadForRange({
       sources: [source(fixture.sourceRoot, new CountingClaudeAdapter(fixture.sourceRoot))],
       range: utcRange("2026-05-01", "2026-05-01"),
     });
 
-    assert.deepEqual(load.sources[0], { provider: "claude", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 0, complete: true });
+    const expected = { provider: "claude", sourcePath: fixture.sourceRoot, files: 1, cachedRecords: 0, complete: true };
+    assert.deepEqual((await load()).sources[0], expected);
+    // Second load: the empty file is skipped as already parsed, not counted as unparsed backlog.
+    const warm = await load();
+    assert.deepEqual(warm.sources[0], expected);
+    assert.equal(warm.cache.historicalComplete, true);
   } finally {
     await fixture.dispose();
   }
