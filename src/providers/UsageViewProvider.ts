@@ -691,20 +691,29 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const missingProviders = sourcePaths.filter((source) => !source.sourcePath).map((source) => source.provider);
-    if (missingProviders.length === 0) {
+    // An explicit "Detect Local AI Usage Sources" run may re-point providers that
+    // were auto-configured earlier: once a path is written, the automatic path
+    // would otherwise never revisit it even when a newer default exists.
+    const candidates = force ? sourcePaths.map((source) => source.provider) : sourcePaths.filter((source) => !source.sourcePath).map((source) => source.provider);
+    if (candidates.length === 0) {
       return;
     }
 
-    const detected = (await new SourceDetectionService(undefined, undefined, undefined, this.globalStorageRoot()).detect()).filter(
-      (source) => missingProviders.includes(source.provider),
+    const found = (await new SourceDetectionService(undefined, undefined, undefined, this.globalStorageRoot()).detect()).filter(
+      (source) => candidates.includes(source.provider),
     );
-    if (detected.length === 0) {
+    if (found.length === 0) {
       if (!this.noSourcePromptShown || force) {
         this.noSourcePromptShown = true;
         void this.promptNoSources();
       }
       return;
+    }
+    const detected = found.filter(
+      (source) => source.sourcePath !== sourcePaths.find((configured) => configured.provider === source.provider)?.sourcePath,
+    );
+    if (detected.length === 0) {
+      return; // everything found is already configured
     }
 
     const target = vscode.ConfigurationTarget.Global;
