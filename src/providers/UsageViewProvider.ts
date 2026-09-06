@@ -393,7 +393,11 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
    * an empty "today" or a deliberately archived path never triggers it.
    */
   private async flagStaleConfiguredSources(load: CachedUsageLoadResult): Promise<void> {
-    const dead = load.sources.filter((source) => source.sourcePath && source.complete && source.cachedRecords === 0);
+    // Read errors explain an empty source on their own; only a cleanly parsed, empty source is "stale".
+    const dead = load.sources.filter(
+      (source) => source.sourcePath && source.complete && source.cachedRecords === 0
+        && !load.imports.some((item) => item.provider === source.provider && item.errors.length > 0),
+    );
     if (dead.length === 0) {
       return;
     }
