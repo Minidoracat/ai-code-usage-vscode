@@ -224,7 +224,7 @@ test("grok rows with cache hits are counted but not priced, because grok-cli doe
   }
 });
 
-const acpTurn = (timestamp: number, model: string, usage: { input: number; output: number; cached?: number; ticks?: number }) =>
+const acpTurn = (timestamp: number, model: string, usage: { input: number; output: number; cached?: number; ticks?: number; total?: number }) =>
   JSON.stringify({
     timestamp,
     method: "_x.ai/session/update",
@@ -234,7 +234,7 @@ const acpTurn = (timestamp: number, model: string, usage: { input: number; outpu
         sessionUpdate: "turn_completed",
         usage: {
           inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: usage.ticks ?? 0,
-          modelUsage: { [model]: { inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: usage.ticks ?? 0 } },
+          modelUsage: { [model]: { inputTokens: usage.input, outputTokens: usage.output, totalTokens: usage.total ?? usage.input + usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: usage.ticks ?? 0 } },
         },
       },
     },
@@ -319,6 +319,23 @@ test("cached importer keeps grok agent turns while updates.jsonl is being writte
     assert.ok(unstable.imports[0]?.warnings.some((warning) => warning.code === "file_transient"));
     assert.equal(recovered.imports[0]?.records.length, 1);
     assert.deepEqual(recovered.imports[0]?.warnings, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("grok ACP parser leaves input intact when the stream stops reporting the inclusive-input invariant", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const session = path.join(root, "cwd", "01a0-session");
+    await mkdir(session, { recursive: true });
+    // total = input + output + cached: the headless convention, where input excludes the cache
+    await writeFile(path.join(session, "updates.jsonl"), acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, cached: 40, total: 150 }) + "\n");
+
+    const result = await new GrokUsageAdapter(root).importUsage();
+
+    assert.deepEqual(result.records[0]?.tokens, { input: 100, cacheRead: 40, output: 10 });
+    assert.deepEqual(result.warnings.map((warning) => warning.code), ["token_convention_changed"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -164,6 +164,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     result.sourceMeta.push(meta);
     const sessionId = path.basename(path.dirname(filePath));
     const rows: UsageRecord[] = [];
+    let unsplit = 0;
     const collect = (line: string, lineNumber: number): void => {
       if (!line.trim()) {
         return;
@@ -186,9 +187,15 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
           ? { amount: usage.costUsdTicks / 1e10, currency: "USD", source: "imported" as const }
           : undefined;
         const cached = usage.cachedReadTokens ?? 0;
-        // inputTokens includes cached reads; the catalog prices the two
-        // categories separately, so split them here.
-        const input = usage.inputTokens - cached;
+        // In the ACP stream inputTokens includes cached reads (totalTokens =
+        // inputTokens + outputTokens); the headless JSON output uses the other
+        // convention. Only split when the stream's own invariant holds so a
+        // format change cannot silently under-count input.
+        const inclusive = usage.totalTokens === undefined || usage.totalTokens === usage.inputTokens + usage.outputTokens;
+        if (!inclusive) {
+          unsplit += 1;
+        }
+        const input = inclusive ? usage.inputTokens - cached : usage.inputTokens;
         if (input > 0) tokens.input = input;
         if (cached > 0) tokens.cacheRead = cached;
         if (usage.outputTokens > 0) tokens.output = usage.outputTokens;
@@ -216,13 +223,16 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       result.warnings.push(issue("warning", "file_transient", "grok session log changed while reading; skipped for this refresh.", filePath));
       return;
     }
+    if (unsplit > 0) {
+      result.warnings.push(issue("warning", "token_convention_changed", `${unsplit} grok turns no longer report totalTokens = inputTokens + outputTokens; cached reads were left inside input.`, filePath));
+    }
     result.records.push(...out);
   }
 }
 
 type AcpTurn = {
   timestamp: number;
-  modelUsage: Record<string, { inputTokens: number; outputTokens: number; cachedReadTokens?: number; costUsdTicks?: number }>;
+  modelUsage: Record<string, { inputTokens: number; outputTokens: number; totalTokens?: number; cachedReadTokens?: number; costUsdTicks?: number }>;
 };
 
 function asAcpTurn(value: unknown): AcpTurn | undefined {
@@ -249,6 +259,7 @@ function asAcpTurn(value: unknown): AcpTurn | undefined {
         outputTokens: entry["outputTokens"],
         cachedReadTokens: typeof entry["cachedReadTokens"] === "number" ? entry["cachedReadTokens"] : undefined,
         costUsdTicks: typeof entry["costUsdTicks"] === "number" ? entry["costUsdTicks"] : undefined,
+        totalTokens: typeof entry["totalTokens"] === "number" ? entry["totalTokens"] : undefined,
       };
     }
   }
