@@ -2,23 +2,31 @@ import { existsSync, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AdapterImportResult, ImportIssue, SourceMeta, UsageRecord } from "../domain/types";
-import { JsonUsageAdapter, normalizeIso, type UsageFileListResult } from "./JsonUsageAdapter";
+import { JsonUsageAdapter, normalizeIso, sourceMeta, type UsageFileListResult } from "./JsonUsageAdapter";
+import { streamJsonlLines } from "./jsonlStream";
 
 /**
- * grok-cli keeps local usage accounting in `~/.grok-cli/session.db` (SQLite,
- * rollback-journal mode, table `session_events`: one row per request with
- * model and token counts). The file is copied into memory and opened with
- * sql.js (wasm, no native module). A copy taken mid-transaction could mix old
- * and new pages, so the read goes through the same before/after fingerprint
- * check as JSON sources and is skipped for this refresh if the file moved.
- * grok-cli's `estimated_cost_micro_usd` is its own bundled-table estimate,
- * not a bill, so it is ignored in favour of the catalog's xAI rules.
+ * Two Grok tools write local usage:
+ *
+ * - xAI's official `grok` coding agent: `~/.grok/sessions/<cwd>/<id>/updates.jsonl`,
+ *   an ACP update stream whose `turn_completed` events carry per-model token
+ *   usage. `inputTokens` there includes `cachedReadTokens` (API convention).
+ * - the third-party grok-cli: `~/.grok-cli/session.db` (SQLite, rollback
+ *   journal, table `session_events`). Read through sql.js from an in-memory
+ *   copy with the same stability checks as JSON sources. Its
+ *   `estimated_cost_micro_usd` is a bundled-table estimate, not a bill, and is
+ *   ignored; rows with cache hits are counted but not priced because the tool
+ *   does not record whether `input_tokens` already had the cache subtracted.
  */
 export class GrokUsageAdapter extends JsonUsageAdapter {
   public override readonly provider = "grok" as const;
 
   public constructor(private readonly grokPath?: string) {
     super(grokPath);
+  }
+
+  protected override isUsageFile(name: string): boolean {
+    return name === "updates.jsonl" || name === "session.db";
   }
 
   /**
@@ -47,6 +55,10 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
   }
 
   protected override async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
+    if (path.basename(filePath) === "updates.jsonl") {
+      await this.readAcpUpdates(filePath, result, readAt);
+      return;
+    }
     const meta: SourceMeta = { sourcePath: filePath, sourceKind: "sqlite", parserVersion: grokParserVersion, readAt };
     result.sourceMeta.push(meta);
 
@@ -132,17 +144,112 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       result.warnings.push(issue("warning", "no_token_usage", `${skipped} grok-cli events carry no token usage or no timestamp (image/video/audio) and were skipped.`, filePath));
     }
   }
+
+  /**
+   * `~/.grok/sessions/<cwd>/<id>/updates.jsonl`: one record per
+   * `turn_completed` event and model. Cost is computed from the catalog:
+   * the stream's `costUsdTicks` uses an undocumented unit that does not
+   * reconcile with list prices.
+   */
+  private async readAcpUpdates(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
+    const meta = sourceMeta(filePath, "jsonl", readAt);
+    result.sourceMeta.push(meta);
+    const sessionId = path.basename(path.dirname(filePath));
+    const rows: UsageRecord[] = [];
+    const collect = (line: string, lineNumber: number): void => {
+      if (!line.trim()) {
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch (error) {
+        result.errors.push(issue("error", "malformed_jsonl", error instanceof Error ? error.message : String(error), filePath, lineNumber));
+        return;
+      }
+      const event = asAcpTurn(parsed);
+      if (!event) {
+        return;
+      }
+      const observedAt = new Date(event.timestamp * 1000).toISOString();
+      for (const [model, usage] of Object.entries(event.modelUsage)) {
+        const tokens: UsageRecord["tokens"] = {};
+        const cached = usage.cachedReadTokens ?? 0;
+        // inputTokens includes cached reads; the catalog prices the two
+        // categories separately, so split them here.
+        const input = usage.inputTokens - cached;
+        if (input > 0) tokens.input = input;
+        if (cached > 0) tokens.cacheRead = cached;
+        if (usage.outputTokens > 0) tokens.output = usage.outputTokens;
+        if (Object.keys(tokens).length === 0) {
+          continue;
+        }
+        rows.push({ provider: "grok", model, sessionId, startedAt: observedAt, observedAt, tokens, source: meta, raw: parsed });
+      }
+    };
+    const out = await this.readStable(filePath, async () => {
+      rows.length = 0;
+      const stream = await streamJsonlLines(filePath, collect);
+      if (stream.partialTail !== undefined) {
+        collect(stream.partialTail, stream.lineCount + 1);
+      }
+      return rows.slice();
+    }).catch((error: unknown) => {
+      result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
+      return undefined;
+    });
+    if (out === undefined) {
+      return;
+    }
+    result.records.push(...out);
+  }
+}
+
+type AcpTurn = {
+  timestamp: number;
+  modelUsage: Record<string, { inputTokens: number; outputTokens: number; cachedReadTokens?: number }>;
+};
+
+function asAcpTurn(value: unknown): AcpTurn | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const root = value as Record<string, unknown>;
+  const update = (root["params"] as Record<string, unknown> | undefined)?.["update"] as Record<string, unknown> | undefined;
+  if (update?.["sessionUpdate"] !== "turn_completed") {
+    return undefined;
+  }
+  const usage = update["usage"] as Record<string, unknown> | undefined;
+  const modelUsage = usage?.["modelUsage"];
+  const timestamp = root["timestamp"];
+  if (typeof timestamp !== "number" || typeof modelUsage !== "object" || modelUsage === null) {
+    return undefined;
+  }
+  const perModel: AcpTurn["modelUsage"] = {};
+  for (const [model, raw] of Object.entries(modelUsage as Record<string, unknown>)) {
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry?.["inputTokens"] === "number" && typeof entry["outputTokens"] === "number") {
+      perModel[model] = {
+        inputTokens: entry["inputTokens"],
+        outputTokens: entry["outputTokens"],
+        cachedReadTokens: typeof entry["cachedReadTokens"] === "number" ? entry["cachedReadTokens"] : undefined,
+      };
+    }
+  }
+  return { timestamp, modelUsage: perModel };
 }
 
 export const grokParserVersion = "grok-sqlite-v1";
 
+/** `~/.grok-cli` (folder picker / settings) means its `session.db`; any other directory is scanned for `updates.jsonl`. */
 async function resolveSessionDb(usagePath: string | undefined): Promise<string | undefined> {
   if (!usagePath) {
     return usagePath;
   }
   try {
-    if ((await fs.stat(usagePath)).isDirectory()) {
-      return path.join(usagePath, "session.db");
+    const db = path.join(usagePath, "session.db");
+    if ((await fs.stat(usagePath)).isDirectory() && existsSync(db)) {
+      return db;
     }
   } catch {
     // missing path: let the base implementation report path_unreadable
@@ -286,6 +393,6 @@ function loadSqlJs(): Promise<SqlJs> {
   return sqlJs;
 }
 
-function issue(severity: ImportIssue["severity"], code: string, message: string, sourcePath: string): ImportIssue {
-  return { severity, code, message, sourcePath, provider: "grok" };
+function issue(severity: ImportIssue["severity"], code: string, message: string, sourcePath: string, line?: number): ImportIssue {
+  return { severity, code, message, sourcePath, provider: "grok", line };
 }

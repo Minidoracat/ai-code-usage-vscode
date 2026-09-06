@@ -215,3 +215,51 @@ test("grok rows with cache hits are counted but not priced, because grok-cli doe
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+const acpTurn = (timestamp: number, model: string, usage: { input: number; output: number; cached?: number }) =>
+  JSON.stringify({
+    timestamp,
+    method: "_x.ai/session/update",
+    params: {
+      sessionId: "s",
+      update: {
+        sessionUpdate: "turn_completed",
+        usage: {
+          inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: 1,
+          modelUsage: { [model]: { inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0 } },
+        },
+      },
+    },
+  });
+
+test("grok adapter reads the official grok agent's ACP session updates and splits cached tokens out of inputTokens", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const session = path.join(root, "%2Froot%2Fproj", "01a0-session");
+    await mkdir(session, { recursive: true });
+    await writeFile(path.join(session, "updates.jsonl"), [
+      JSON.stringify({ timestamp: 1_788_677_370, method: "_x.ai/session/update", params: { update: { sessionUpdate: "agent_message_chunk" } } }),
+      acpTurn(1_788_677_379, "grok-4.6-build", { input: 36_343, output: 63 }),
+      acpTurn(1_788_677_381, "grok-4.6-build", { input: 36_426, output: 66, cached: 36_224 }),
+    ].join("\n") + "\n");
+    // sibling files the base scanner would otherwise pick up
+    await writeFile(path.join(session, "chat_history.jsonl"), JSON.stringify({ role: "user", content: "hi", usage: { inputTokens: 999 } }) + "\n");
+    await writeFile(path.join(session, "summary.json"), JSON.stringify({ info: { id: "x" } }));
+
+    const result = await new GrokUsageAdapter(root).importUsage();
+    const catalog = JSON.parse(await readFile(path.join(process.cwd(), "src/pricing/catalog.json"), "utf8")) as PricingCatalog;
+    const pricing = new PricingService(catalog);
+
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.records.length, 2);
+    assert.equal(result.records[0]?.sessionId, "01a0-session");
+    assert.equal(result.records[0]?.startedAt, "2026-09-06T06:49:39.000Z");
+    assert.deepEqual(result.records[0]?.tokens, { input: 36_343, output: 63 });
+    assert.deepEqual(result.records[1]?.tokens, { input: 202, cacheRead: 36_224, output: 66 });
+    // grok-4.6-build prices as grok-4.6: 202*2 + 36224*0.5 + 66*6 per MTok
+    const cached = pricing.estimate(result.records[1]!);
+    assert.equal(cached.available && cached.cost.amount, 0.018912);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -21,5 +21,5 @@
   "configuration.screenshotIncludePricing.description": "Include the pricing rules panel in the full-page screenshot copy.",
   "configuration.screenshotIncludeSessions.description": "Include the sessions table in the full-page screenshot copy.",
   "configuration.piUsagePath.description": "Local pi coding agent sessions path (omp, pi CLI, or vscode-pi transcripts). Leave empty to automatically apply detected local sources.",
-  "configuration.grokUsagePath.description": "Local grok-cli session database path (`~/.grok-cli/session.db`). Leave empty to automatically apply detected local sources."
+  "configuration.grokUsagePath.description": "Local Grok usage path: the `~/.grok/sessions` folder of xAI's grok agent, or grok-cli's `~/.grok-cli/session.db`. Leave empty to automatically apply detected local sources."
 }

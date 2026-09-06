@@ -66,7 +66,7 @@ If these settings are empty, the extension detects common local paths and applie
 | Claude Code | `~/.claude/projects` |
 | Codex | `~/.codex/sessions` |
 | pi agent | `$PI_CODING_AGENT_DIR/sessions`, `~/.omp/agent/sessions`, `~/.pi/agent/sessions`, or the vscode-pi extension storage |
-| grok-cli | `~/.grok-cli/session.db` (or the `~/.grok-cli` folder) |
+| Grok | `~/.grok/sessions` (xAI grok agent) or `~/.grok-cli/session.db` (grok-cli) |
 
 On native Windows VS Code, `~` resolves to the current Windows user home, such as `C:\Users\<user>\.claude\projects` and `C:\Users\<user>\.codex\sessions`.
 

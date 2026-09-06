@@ -21,5 +21,5 @@
   "configuration.screenshotIncludePricing.description": "複製整頁截圖時包含計價規則面板。",
   "configuration.screenshotIncludeSessions.description": "複製整頁截圖時包含工作階段表格。",
   "configuration.piUsagePath.description": "pi coding agent 工作階段轉錄（omp、pi CLI、vscode-pi）的本機路徑。留空時會自動套用偵測到的本機來源。",
-  "configuration.grokUsagePath.description": "grok-cli 工作階段資料庫（`~/.grok-cli/session.db`）的本機路徑。留空時會自動套用偵測到的本機來源。"
+  "configuration.grokUsagePath.description": "本機 Grok usage path：xAI grok agent 的 `~/.grok/sessions` 資料夾，或 grok-cli 的 `~/.grok-cli/session.db`。留空時會自動套用偵測到的本機來源。"
 }

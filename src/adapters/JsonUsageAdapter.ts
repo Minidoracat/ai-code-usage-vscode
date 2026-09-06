@@ -160,7 +160,7 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
 
     const sortedEntries = entries.sort((left, right) => left.name.localeCompare(right.name));
-    const fileEntries = sortedEntries.filter((entry) => entry.isFile() && isUsageFileName(entry.name));
+    const fileEntries = sortedEntries.filter((entry) => entry.isFile() && this.isUsageFile(entry.name));
     const directoryEntries = sortedEntries.filter((entry) => entry.isDirectory());
     const fileRefs = (
       await mapWithConcurrency(fileEntries, fileStatConcurrency, async (entry) => {
@@ -188,6 +188,11 @@ export abstract class JsonUsageAdapter implements UsageAdapter {
     }
 
     return files.slice(0, maxFilesPerSource);
+  }
+
+  /** Which file names inside a usage directory are parsed. Adapters with their own formats override this. */
+  protected isUsageFile(name: string): boolean {
+    return isUsageFileName(name);
   }
 
   protected async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
@@ -518,7 +523,7 @@ function isUsageFileName(name: string): boolean {
   return /\.(json|jsonl)$/i.test(name) && !/\.meta\.json$/i.test(name);
 }
 
-function sourceMeta(sourcePath: string, sourceKindValue: SourceKind, readAt: string): SourceMeta {
+export function sourceMeta(sourcePath: string, sourceKindValue: SourceKind, readAt: string): SourceMeta {
   return {
     sourcePath,
     sourceKind: sourceKindValue,

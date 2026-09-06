@@ -21,5 +21,5 @@
   "configuration.screenshotIncludePricing.description": "전체 페이지 스크린샷 복사에 가격 규칙 패널을 포함합니다.",
   "configuration.screenshotIncludeSessions.description": "전체 페이지 스크린샷 복사에 세션 테이블을 포함합니다.",
   "configuration.piUsagePath.description": "pi coding agent 세션 기록(omp, pi CLI, vscode-pi)의 로컬 path입니다. 비워 두면 감지된 로컬 소스를 자동으로 적용합니다.",
-  "configuration.grokUsagePath.description": "grok-cli 세션 데이터베이스(`~/.grok-cli/session.db`)의 로컬 path입니다. 비워 두면 감지된 로컬 소스를 자동으로 적용합니다."
+  "configuration.grokUsagePath.description": "로컬 Grok usage path: xAI grok agent의 `~/.grok/sessions` 폴더 또는 grok-cli의 `~/.grok-cli/session.db`. 비워 두면 감지된 로컬 소스를 자동으로 적용합니다."
 }

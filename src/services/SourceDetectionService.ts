@@ -71,7 +71,10 @@ export function usageSourceCandidates(
     ...(globalStorageRoot
       ? [{ provider: "pi" as const, sourcePath: pathApi.join(globalStorageRoot, "cdervis.vscode-pi", "bundled-pi-agent", "sessions") }]
       : []),
-    ...homeRoots.map((homeRoot) => ({ provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok-cli", "session.db") })),
+    ...homeRoots.flatMap((homeRoot) => [
+      { provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok", "sessions") },
+      { provider: "grok" as const, sourcePath: pathApi.join(homeRoot, ".grok-cli", "session.db") },
+    ]),
   ];
   const seen = new Set<string>();
   return candidates.filter((candidate) => !seen.has(candidate.sourcePath) && seen.add(candidate.sourcePath));

@@ -547,7 +547,8 @@
       "provider": "grok",
       "model": "grok-4.6",
       "modelAliases": [
-        "grok-4.6-latest"
+        "grok-4.6-latest",
+        "grok-4.6-build"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -571,7 +572,8 @@
       "provider": "grok",
       "model": "grok-4.5",
       "modelAliases": [
-        "grok-4.5-latest"
+        "grok-4.5-latest",
+        "grok-4.5-build"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -595,7 +597,8 @@
       "provider": "grok",
       "model": "grok-4.3",
       "modelAliases": [
-        "grok-4.3-latest"
+        "grok-4.3-latest",
+        "grok-4.3-build"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
