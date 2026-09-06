@@ -147,9 +147,11 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
 
   /**
    * `~/.grok/sessions/<cwd>/<id>/updates.jsonl`: one record per
-   * `turn_completed` event and model. Cost is computed from the catalog:
-   * the stream's `costUsdTicks` uses an undocumented unit that does not
-   * reconcile with list prices.
+   * `turn_completed` event and model. `costUsdTicks` is the agent's own
+   * billed amount in 1e-10 USD (verified against real turns: per-model
+   * effective rates come out as clean constants across turns); it is
+   * imported as the record cost because the `-build` model ids are not in
+   * the public price list and bill at their own rates.
    */
   private async readAcpUpdates(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
     const meta = sourceMeta(filePath, "jsonl", readAt);
@@ -174,6 +176,9 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       const observedAt = new Date(event.timestamp * 1000).toISOString();
       for (const [model, usage] of Object.entries(event.modelUsage)) {
         const tokens: UsageRecord["tokens"] = {};
+        const cost = typeof usage.costUsdTicks === "number" && usage.costUsdTicks > 0
+          ? { amount: usage.costUsdTicks / 1e10, currency: "USD", source: "imported" as const }
+          : undefined;
         const cached = usage.cachedReadTokens ?? 0;
         // inputTokens includes cached reads; the catalog prices the two
         // categories separately, so split them here.
@@ -184,7 +189,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
         if (Object.keys(tokens).length === 0) {
           continue;
         }
-        rows.push({ provider: "grok", model, sessionId, startedAt: observedAt, observedAt, tokens, source: meta, raw: parsed });
+        rows.push({ provider: "grok", model, sessionId, startedAt: observedAt, observedAt, tokens, cost, source: meta, raw: parsed });
       }
     };
     const out = await this.readStable(filePath, async () => {
@@ -196,9 +201,13 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
       return rows.slice();
     }).catch((error: unknown) => {
       result.errors.push(issue("error", "file_unreadable", error instanceof Error ? error.message : String(error), filePath));
-      return undefined;
+      return null;
     });
+    if (out === null) {
+      return;
+    }
     if (out === undefined) {
+      result.warnings.push(issue("warning", "file_transient", "grok session log changed while reading; skipped for this refresh.", filePath));
       return;
     }
     result.records.push(...out);
@@ -207,7 +216,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
 
 type AcpTurn = {
   timestamp: number;
-  modelUsage: Record<string, { inputTokens: number; outputTokens: number; cachedReadTokens?: number }>;
+  modelUsage: Record<string, { inputTokens: number; outputTokens: number; cachedReadTokens?: number; costUsdTicks?: number }>;
 };
 
 function asAcpTurn(value: unknown): AcpTurn | undefined {
@@ -233,6 +242,7 @@ function asAcpTurn(value: unknown): AcpTurn | undefined {
         inputTokens: entry["inputTokens"],
         outputTokens: entry["outputTokens"],
         cachedReadTokens: typeof entry["cachedReadTokens"] === "number" ? entry["cachedReadTokens"] : undefined,
+        costUsdTicks: typeof entry["costUsdTicks"] === "number" ? entry["costUsdTicks"] : undefined,
       };
     }
   }

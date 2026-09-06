@@ -547,8 +547,7 @@
       "provider": "grok",
       "model": "grok-4.6",
       "modelAliases": [
-        "grok-4.6-latest",
-        "grok-4.6-build"
+        "grok-4.6-latest"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -572,8 +571,7 @@
       "provider": "grok",
       "model": "grok-4.5",
       "modelAliases": [
-        "grok-4.5-latest",
-        "grok-4.5-build"
+        "grok-4.5-latest"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -597,8 +595,7 @@
       "provider": "grok",
       "model": "grok-4.3",
       "modelAliases": [
-        "grok-4.3-latest",
-        "grok-4.3-build"
+        "grok-4.3-latest"
       ],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
@@ -670,9 +667,7 @@
     {
       "provider": "grok",
       "model": "grok-build-0.1",
-      "modelAliases": [
-        "grok-build"
-      ],
+      "modelAliases": [],
       "currency": "USD",
       "priceUnit": "per_1m_tokens",
       "sourceUrl": "https://docs.x.ai/developers/models",

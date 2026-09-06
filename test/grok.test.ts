@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { promises as fs, type Stats } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -216,7 +217,7 @@ test("grok rows with cache hits are counted but not priced, because grok-cli doe
   }
 });
 
-const acpTurn = (timestamp: number, model: string, usage: { input: number; output: number; cached?: number }) =>
+const acpTurn = (timestamp: number, model: string, usage: { input: number; output: number; cached?: number; ticks?: number }) =>
   JSON.stringify({
     timestamp,
     method: "_x.ai/session/update",
@@ -225,22 +226,22 @@ const acpTurn = (timestamp: number, model: string, usage: { input: number; outpu
       update: {
         sessionUpdate: "turn_completed",
         usage: {
-          inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: 1,
-          modelUsage: { [model]: { inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0 } },
+          inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: usage.ticks ?? 0,
+          modelUsage: { [model]: { inputTokens: usage.input, outputTokens: usage.output, cachedReadTokens: usage.cached ?? 0, costUsdTicks: usage.ticks ?? 0 } },
         },
       },
     },
   });
 
-test("grok adapter reads the official grok agent's ACP session updates and splits cached tokens out of inputTokens", async () => {
+test("grok adapter reads the official grok agent's ACP session updates: billed cost, cached tokens split out of inputTokens", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
   try {
     const session = path.join(root, "%2Froot%2Fproj", "01a0-session");
     await mkdir(session, { recursive: true });
     await writeFile(path.join(session, "updates.jsonl"), [
       JSON.stringify({ timestamp: 1_788_677_370, method: "_x.ai/session/update", params: { update: { sessionUpdate: "agent_message_chunk" } } }),
-      acpTurn(1_788_677_379, "grok-4.6-build", { input: 36_343, output: 63 }),
-      acpTurn(1_788_677_381, "grok-4.6-build", { input: 36_426, output: 66, cached: 36_224 }),
+      acpTurn(1_788_677_379, "grok-4.6-build", { input: 36_343, output: 63, ticks: 124_208_800 }),
+      acpTurn(1_788_677_381, "grok-4.6-build", { input: 36_426, output: 66, cached: 36_224, ticks: 32_150_400 }),
     ].join("\n") + "\n");
     // sibling files the base scanner would otherwise pick up
     await writeFile(path.join(session, "chat_history.jsonl"), JSON.stringify({ role: "user", content: "hi", usage: { inputTokens: 999 } }) + "\n");
@@ -256,9 +257,54 @@ test("grok adapter reads the official grok agent's ACP session updates and split
     assert.equal(result.records[0]?.startedAt, "2026-09-06T06:49:39.000Z");
     assert.deepEqual(result.records[0]?.tokens, { input: 36_343, output: 63 });
     assert.deepEqual(result.records[1]?.tokens, { input: 202, cacheRead: 36_224, output: 66 });
-    // grok-4.6-build prices as grok-4.6: 202*2 + 36224*0.5 + 66*6 per MTok
-    const cached = pricing.estimate(result.records[1]!);
-    assert.equal(cached.available && cached.cost.amount, 0.018912);
+    // costUsdTicks is the agent's billed amount in 1e-10 USD and wins over the catalog
+    // (grok-4.6-build is not a public list price; at list rates this turn would be $0.018912).
+    assert.deepEqual(result.records[1]?.cost, { amount: 0.00321504, currency: "USD", source: "imported" });
+    const billed = pricing.estimate(result.records[1]!);
+    assert.equal(billed.available && billed.cost.amount, 0.00321504);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cached importer keeps grok agent turns while updates.jsonl is being written and rereads once stable", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
+  try {
+    const session = path.join(root, "sessions", "cwd", "01a0-session");
+    await mkdir(session, { recursive: true });
+    const log = path.join(session, "updates.jsonl");
+    await writeFile(log, acpTurn(1_788_677_379, "grok-4.6-build", { input: 100, output: 10, ticks: 1_000_000 }) + "\n");
+    const importer = new CachedUsageImporter(path.join(root, "cache"));
+    const range = new TimeRangeService(() => new Date("2026-09-06T23:00:00.000Z"), resolveTimeZone("utc")).resolve("today");
+    const sourceRoot = path.join(root, "sessions");
+    const load = (adapter: GrokUsageAdapter) => importer.loadForRange({ sources: [{ provider: "grok", sourcePath: sourceRoot, adapter }], range });
+
+    const warm = await load(new GrokUsageAdapter(sourceRoot));
+    // A writer keeps changing the file for the whole refresh: every stat differs.
+    const flaky = new GrokUsageAdapter(sourceRoot);
+    const realStat = fs.stat.bind(fs);
+    let bump = 0;
+    (fs as { stat: typeof fs.stat }).stat = (async (target: string, ...rest: unknown[]) => {
+      const stat = await (realStat as (...args: unknown[]) => Promise<Stats>)(target, ...rest);
+      if (target === log) {
+        bump += 1;
+        return { ...stat, size: stat.size + bump, mtimeMs: stat.mtimeMs + bump, isFile: () => true, isDirectory: () => false } as Stats;
+      }
+      return stat;
+    }) as typeof fs.stat;
+    let unstable;
+    try {
+      unstable = await load(flaky);
+    } finally {
+      (fs as { stat: typeof fs.stat }).stat = realStat;
+    }
+    const recovered = await load(new GrokUsageAdapter(sourceRoot));
+
+    assert.equal(warm.imports[0]?.records.length, 1);
+    assert.equal(unstable.imports[0]?.records.length, 1, "cached turn survives a torn read");
+    assert.ok(unstable.imports[0]?.warnings.some((warning) => warning.code === "file_transient"));
+    assert.equal(recovered.imports[0]?.records.length, 1);
+    assert.deepEqual(recovered.imports[0]?.warnings, []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
