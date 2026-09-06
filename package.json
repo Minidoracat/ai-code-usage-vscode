@@ -98,25 +98,25 @@
         "aiCodingUsage.claude.usagePath": {
           "type": "string",
           "default": "",
-          "scope": "machine",
+          "scope": "machine-overridable",
           "markdownDescription": "%configuration.claudeUsagePath.description%"
         },
         "aiCodingUsage.codex.usagePath": {
           "type": "string",
           "default": "",
-          "scope": "machine",
+          "scope": "machine-overridable",
           "markdownDescription": "%configuration.codexUsagePath.description%"
         },
         "aiCodingUsage.pi.usagePath": {
           "type": "string",
           "default": "",
-          "scope": "machine",
+          "scope": "machine-overridable",
           "markdownDescription": "%configuration.piUsagePath.description%"
         },
         "aiCodingUsage.grok.usagePath": {
           "type": "string",
           "default": "",
-          "scope": "machine",
+          "scope": "machine-overridable",
           "markdownDescription": "%configuration.grokUsagePath.description%"
         },
         "aiCodingUsage.defaultRange": {
