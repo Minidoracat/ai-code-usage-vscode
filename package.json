@@ -98,21 +98,25 @@
         "aiCodingUsage.claude.usagePath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "markdownDescription": "%configuration.claudeUsagePath.description%"
         },
         "aiCodingUsage.codex.usagePath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "markdownDescription": "%configuration.codexUsagePath.description%"
         },
         "aiCodingUsage.pi.usagePath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "markdownDescription": "%configuration.piUsagePath.description%"
         },
         "aiCodingUsage.grok.usagePath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "markdownDescription": "%configuration.grokUsagePath.description%"
         },
         "aiCodingUsage.defaultRange": {

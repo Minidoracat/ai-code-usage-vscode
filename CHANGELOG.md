@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Pending release
+
+### Fixed
+
+- Usage path settings (`aiCodingUsage.*.usagePath`) are now machine-scoped: they are no longer carried between machines by Settings Sync, and a Remote-SSH window keeps its own. Previously an auto-detected Linux path (`/root/.omp/agent/sessions`) could be synced to a Windows machine, where it was rejected as "not a path on this machine" and left the provider empty. Existing synced values are ignored; the correct local path is detected again on the next refresh.
+
 ## 0.1.8 - 2026-09-06
 
 ### Added
