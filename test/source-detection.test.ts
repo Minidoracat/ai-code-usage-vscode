@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { supportedProviders } from "../src/domain/types";
 import { isNativeUsagePath, SourceDetectionService, usageSourceCandidates } from "../src/services/SourceDetectionService";
 
 test("source detection previews existing Claude and Codex usage roots", async () => {
@@ -81,4 +82,11 @@ test("native usage path validation rejects cross-platform synced paths", () => {
   assert.equal(isNativeUsagePath("test/fixtures/claude", "win32"), true);
   assert.equal(isNativeUsagePath("C:\\Users\\FixtureUser\\.codex\\sessions", "linux"), false);
   assert.equal(isNativeUsagePath("/posix-fixture-home/.codex/sessions", "linux"), true);
+});
+
+test("every provider usage path setting is machine-scoped so Settings Sync never carries it across machines", async () => {
+  const manifest = JSON.parse(await readFile("package.json", "utf8")) as { contributes: { configuration: { properties: Record<string, { scope?: string }> } } };
+  const properties = manifest.contributes.configuration.properties;
+
+  assert.deepEqual(supportedProviders.map((provider) => properties[`aiCodingUsage.${provider}.usagePath`]?.scope), supportedProviders.map(() => "machine-overridable"));
 });
