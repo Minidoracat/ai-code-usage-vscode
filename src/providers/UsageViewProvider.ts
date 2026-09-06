@@ -433,6 +433,11 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
   }
 
   public async detectLocalSources(): Promise<void> {
+    if (!this.lastLoad) {
+      // Emptiness of a configured path is judged from a completed scan; make
+      // sure one exists so the command works on a cold start too.
+      await this.refresh({ allowSourcePrompt: false });
+    }
     await this.previewDetectedSources(vscode.workspace.getConfiguration("aiCodingUsage"), true);
     await this.refresh({ allowSourcePrompt: true });
   }
@@ -728,8 +733,12 @@ export class UsageViewProvider implements vscode.WebviewViewProvider {
     // provider whose configured path was scanned completely and holds no usage
     // at all (a stale auto-detected value). A configured path with data, or one
     // we could not read yet, is the user's choice and is never overwritten.
-    const empty = force && this.lastLoad ? new Set(emptyConfiguredSources(this.lastLoad.imports).map((source) => source.provider)) : new Set<UsageProvider>();
-    const candidates = sourcePaths.filter((source) => !source.sourcePath || empty.has(source.provider)).map((source) => source.provider);
+    // Evidence is tied to the path that was scanned: a path changed since the
+    // last load has no evidence yet and is left alone.
+    const empty = force && this.lastLoad ? emptyConfiguredSources(this.lastLoad.imports) : [];
+    const candidates = sourcePaths
+      .filter((source) => !source.sourcePath || empty.some((scanned) => scanned.provider === source.provider && scanned.sourcePath === source.sourcePath))
+      .map((source) => source.provider);
     if (candidates.length === 0) {
       return;
     }
@@ -957,7 +966,11 @@ function requestIdFrom(message: unknown): string {
  * undetermined, not empty.
  */
 function emptyConfiguredSources(load: CachedUsageLoadResult): CachedUsageLoadResult["sources"] {
-  const unreadable = (issue: ImportIssue) => issue.code === "file_transient" || issue.code === "wal_unsupported" || issue.code === "file_unreadable";
+  // Anything that means "we did not get a trustworthy, complete read of this
+  // path": torn/locked/unreadable files, a format we could not parse, rows we
+  // had to drop, or a scan that hit the file cap.
+  const undetermined = new Set(["file_transient", "wal_unsupported", "file_unreadable", "unsupported_schema", "invalid_timestamp", "source_file_limit"]);
+  const unreadable = (issue: ImportIssue) => undetermined.has(issue.code);
   return load.sources.filter((source) => {
     const item = load.imports.find((entry) => entry.provider === source.provider);
     return Boolean(source.sourcePath) && source.complete && source.cachedRecords === 0

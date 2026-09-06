@@ -148,10 +148,10 @@ test("grok adapter reports a WAL-mode database instead of retrying it forever", 
   }
 });
 
-test("cached importer keeps grok records while the database is in WAL mode and rereads after checkpoint", async () => {
+for (const dbName of ["session.db", "session.sqlite"]) test(`cached importer keeps grok records while the database (${dbName}) is in WAL mode and rereads after checkpoint`, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "ai-code-usage-grok-"));
   try {
-    const dbPath = path.join(dir, "session.db");
+    const dbPath = path.join(dir, dbName);
     await writeSessionDb(dbPath, [textEvent("e1", "sess_a", "2026-09-01T10:00:00.000Z", { input: 10, output: 1 })]);
     const importer = new CachedUsageImporter(path.join(dir, "cache"));
     const range = new TimeRangeService(() => new Date("2026-09-01T23:00:00.000Z"), resolveTimeZone("utc")).resolve("today");

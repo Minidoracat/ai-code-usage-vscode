@@ -51,8 +51,8 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
     // subagents/<child>/meta.json, so collect those ids and drop the children.
     const childIds = await subagentSessionIds(listed.files.map((file) => path.dirname(file.filePath)));
     listed.files = listed.files.filter((file) => !childIds.has(path.basename(path.dirname(file.filePath))));
-    // Sidecars only exist beside SQLite databases.
-    await mapWithConcurrency(listed.files.filter((file) => file.filePath.endsWith(".db")), sidecarStatConcurrency, async (file) => {
+    // Sidecars only exist beside SQLite databases (everything readFile does not treat as an ACP log).
+    await mapWithConcurrency(listed.files.filter((file) => !isAcpLog(file.filePath)), sidecarStatConcurrency, async (file) => {
       for (const suffix of ["-journal", "-wal"]) {
         try {
           const sidecar = await fs.stat(file.filePath + suffix);
@@ -67,7 +67,7 @@ export class GrokUsageAdapter extends JsonUsageAdapter {
   }
 
   protected override async readFile(filePath: string, result: AdapterImportResult, readAt: string): Promise<void> {
-    if (path.basename(filePath) === "updates.jsonl") {
+    if (isAcpLog(filePath)) {
       await this.readAcpUpdates(filePath, result, readAt);
       return;
     }
@@ -284,6 +284,10 @@ function asAcpTurn(value: unknown): AcpTurn | undefined {
 }
 
 export const grokParserVersion = "grok-sqlite-v1";
+
+function isAcpLog(filePath: string): boolean {
+  return path.basename(filePath) === "updates.jsonl";
+}
 
 const sidecarStatConcurrency = 16;
 
