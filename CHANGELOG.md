@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Usage path settings (`aiCodingUsage.*.usagePath`) are now `machine-overridable`: Settings Sync no longer carries them between machines, a Remote-SSH window keeps its own, and workspace settings can still override them (fixture testing). Previously an auto-detected Linux path could be synced to a Windows machine, where it was ignored as not valid there and left the provider empty. A value Settings Sync delivered before this release stays in that machine's local user settings; if it is invalid or missing there, empty it once ("Clear invalid paths" when offered, otherwise clear `aiCodingUsage.<provider>.usagePath` by hand) — the re-detected path is machine-local and never syncs out again.
+- Usage path settings (`aiCodingUsage.*.usagePath`) are now `machine-overridable`: Settings Sync no longer carries them between machines, a Remote-SSH window keeps its own, and workspace settings can still override them (fixture testing). Previously an auto-detected Linux path could be synced to a Windows machine, where it was ignored as not valid there and left the provider empty. A value Settings Sync delivered before this release stays in that machine's local user settings; Remote-SSH windows ignore it, and a local window uses it until you empty it once if it is invalid or missing there ("Clear invalid paths" when offered, otherwise clear `aiCodingUsage.<provider>.usagePath` by hand) — the re-detected path is machine-local and never syncs out again.
 
 ## 0.1.8 - 2026-09-06
 
